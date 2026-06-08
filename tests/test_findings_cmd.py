@@ -95,9 +95,9 @@ class TestParseHours:
         assert result >= 1  # clamped to min 1
 
     def test_invalid_raises(self):
-        import click
+        import typer
 
-        with pytest.raises((SystemExit, click.exceptions.Exit)):
+        with pytest.raises((SystemExit, typer.Exit)):
             _parse_hours("abc")
 
 
