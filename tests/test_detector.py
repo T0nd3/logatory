@@ -36,10 +36,5 @@ def test_detects_syslog():
     assert FormatDetector().detect(sample) == LogFormat.SYSLOG
 
 
-def test_detects_evtx_by_extension():
-    fmt = FormatDetector().detect([], path=Path("windows.evtx"))
-    assert fmt == LogFormat.EVTX
-
-
 def test_empty_sample_returns_plaintext():
     assert FormatDetector().detect([]) == LogFormat.PLAINTEXT

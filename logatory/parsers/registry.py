@@ -16,16 +16,5 @@ def get_parser(fmt: LogFormat, source: str) -> BaseParser:
             return SyslogParser(source)
         case LogFormat.AUTH_LOG:
             return AuthLogParser(source)
-        case LogFormat.EVTX:
-            return _evtx_parser(source)
         case _:
             return PlaintextParser(source)
-
-
-def _evtx_parser(source: str) -> BaseParser:
-    try:
-        from .evtx import EvtxParser
-
-        return EvtxParser(source)
-    except ImportError:
-        raise RuntimeError("python-evtx not installed. Run: pip install logatory[evtx]")

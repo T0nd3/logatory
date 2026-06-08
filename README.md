@@ -80,7 +80,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 
 | Capability | Details |
 |---|---|
-| **Format support** | Syslog, Nginx access/error, JSON Lines, Windows Event Log (EVTX), plaintext — auto-detected |
+| **Format support** | Syslog, Nginx access/error, JSON Lines, plaintext — auto-detected; reads plain, gzip, and `.xlsx` files |
 | **PII redaction** | Emails, IPs, credit cards, phone numbers, UUIDs, JWTs, SSH keys — deterministic pseudonymisation or masking |
 | **Rule engine** | YAML-based rules with `contains`, `regex`, `startswith`, `endswith`, `gte`, `lte` operators; multi-field AND/OR |
 | **Sigma support** | Convert Sigma rules to native format |
@@ -143,7 +143,7 @@ Includes: file scanning, PII redaction, rule engine, anomaly detection, findings
 pip install 'logatory[web]'         # web dashboard + REST API (FastAPI, uvicorn, Jinja2)
 pip install 'logatory[docker]'      # read logs from local Docker containers
 pip install 'logatory[opensearch]'  # OpenSearch / Elasticsearch integration
-pip install 'logatory[evtx]'        # Windows Event Log (.evtx) support
+pip install 'logatory[xlsx]'        # read .xlsx spreadsheet log exports
 pip install 'logatory[claude]'      # Anthropic Claude API
 pip install 'logatory[embed]'       # ChromaDB for RAG (llm ask command)
 ```
@@ -151,7 +151,7 @@ pip install 'logatory[embed]'       # ChromaDB for RAG (llm ask command)
 Install everything:
 
 ```bash
-pip install 'logatory[web,docker,opensearch,evtx,claude,embed]'
+pip install 'logatory[web,docker,opensearch,xlsx,claude,embed]'
 ```
 
 ### Shell auto-completion

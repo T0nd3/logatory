@@ -13,11 +13,11 @@ git clone https://github.com/T0nd3/logatory.git
 cd logatory
 
 # Install in editable mode with all optional features + dev tools
-pip install -e '.[web,opensearch,evtx,claude,embed,dev]'
+pip install -e '.[web,opensearch,xlsx,claude,embed,dev]'
 ```
 
 The optional extras are independent — for most work `.[dev,web]` is enough. The
-full set above is only needed when touching the OpenSearch, EVTX, Claude or
+full set above is only needed when touching the OpenSearch, xlsx, Claude or
 embedding code paths.
 
 ## Running the checks
@@ -64,7 +64,7 @@ logatory/          Core library
   errors/              Error fingerprinting and grouping
   export/              Markdown report generator
   llm/                 LLM client factory and prompt templates
-  parsers/             Syslog, Nginx, JSON Lines, EVTX, plaintext parsers
+  parsers/             Syslog, Nginx, JSON Lines, plaintext parsers
   pii/                 PII patterns and redactor
   plugins/             Plugin loader and registry
   rules/               Rule engine, YAML loader, Sigma converter

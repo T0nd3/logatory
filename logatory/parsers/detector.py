@@ -11,7 +11,6 @@ class LogFormat(str, Enum):
     NGINX_COMBINED = "nginx_combined"
     SYSLOG = "syslog"
     AUTH_LOG = "auth_log"
-    EVTX = "evtx"
     PLAINTEXT = "plaintext"
 
 
@@ -22,9 +21,6 @@ _AUTH_LOG_RE = re.compile(r"^\w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \S+ (sshd|sudo|su
 
 class FormatDetector:
     def detect(self, sample_lines: list[str], path: Path | None = None) -> LogFormat:
-        if path and path.suffix.lower() == ".evtx":
-            return LogFormat.EVTX
-
         non_empty = [line.strip() for line in sample_lines if line.strip()]
         if not non_empty:
             return LogFormat.PLAINTEXT
