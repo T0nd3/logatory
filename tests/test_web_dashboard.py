@@ -145,6 +145,32 @@ class TestUploadPage:
         r = client.get("/upload")
         assert "text/html" in r.headers["content-type"]
 
+    def test_xlsx_upload_is_readable(self, client: TestClient, tmp_path: Path) -> None:
+        openpyxl = pytest.importorskip("openpyxl")
+        path = tmp_path / "logs.xlsx"
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["service boot ok"])
+        ws.append(["disk write error", "ERROR"])
+        wb.save(path)
+
+        with path.open("rb") as fh:
+            r = client.post(
+                "/api/upload",
+                files={
+                    "file": (
+                        "logs.xlsx",
+                        fh,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+                },
+                data={"redact": "redact"},
+            )
+
+        assert r.status_code == 200
+        assert "�" not in r.text
+        assert "service boot ok" in r.text
+
 
 # ===========================================================================
 # Dashboard JSON/HTMX API — api.py

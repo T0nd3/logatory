@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import gzip
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -202,11 +201,15 @@ async def api_upload(
             tmp.write(content)
             tmp_path = Path(tmp.name)
 
+        adapter = FileAdapter(tmp_path)
+
         # ── format detection ───────────────────────────────────────────────
         try:
-            open_fn = gzip.open if suffix == ".gz" else open
-            with open_fn(tmp_path, "rt", encoding="utf-8", errors="replace") as fh:
-                sample_lines = [next(fh) for _ in range(10) if True]
+            sample_lines: list[str] = []
+            for line in adapter._read_lines():
+                sample_lines.append(line)
+                if len(sample_lines) >= 10:
+                    break
             format_name = FormatDetector().detect(sample_lines, tmp_path).value
         except Exception:
             format_name = "auto"
@@ -229,7 +232,6 @@ async def api_upload(
         findings_out: list[dict] = []
         pii_hits = 0
 
-        adapter = FileAdapter(tmp_path)
         async for event in adapter.events():
             result = redactor.redact(event.message)
             event.message = result.text

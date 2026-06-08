@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import gzip
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -103,13 +102,11 @@ def _detect_format_name(adapter) -> str:
     if isinstance(adapter, FileAdapter):
         lines: list[str] = []
         try:
-            open_fn = gzip.open if adapter.path.suffix == ".gz" else open
-            with open_fn(adapter.path, "rt", encoding="utf-8", errors="replace") as f:
-                for i, line in enumerate(f):
-                    if i >= 5:
-                        break
-                    if line.strip():
-                        lines.append(line)
+            for line in adapter._read_lines():
+                if line.strip():
+                    lines.append(line)
+                if len(lines) >= 5:
+                    break
             return FormatDetector().detect(lines, adapter.path).value
         except Exception:
             return "unknown"
