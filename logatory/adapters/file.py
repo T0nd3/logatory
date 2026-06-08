@@ -55,9 +55,7 @@ class FileAdapter(SourceAdapter):
         try:
             from openpyxl import load_workbook
         except ImportError as exc:
-            raise RuntimeError(
-                "openpyxl not installed. Run: pip install logatory[xlsx]"
-            ) from exc
+            raise RuntimeError("openpyxl not installed. Run: pip install logatory[xlsx]") from exc
 
         wb = load_workbook(self.path, read_only=True, data_only=True)
         try:
