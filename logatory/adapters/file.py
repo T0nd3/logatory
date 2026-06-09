@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import gzip
-from collections.abc import AsyncIterator
+import json
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 from ..models import Event
@@ -59,12 +60,61 @@ class FileAdapter(SourceAdapter):
 
         wb = load_workbook(self.path, read_only=True, data_only=True)
         try:
-            i = 0
-            for sheet in wb.worksheets:
-                for row in sheet.iter_rows(values_only=True):
-                    if i >= skip:
-                        cells = ["" if c is None else str(c) for c in row]
-                        yield "\t".join(cells)
-                    i += 1
+            for i, line in enumerate(self._xlsx_lines(wb)):
+                if i >= skip:
+                    yield line
         finally:
             wb.close()
+
+    def _xlsx_lines(self, wb) -> Iterator[str]:
+        """Yield one text line per data row.
+
+        When the first sheet starts with a header row of column names, each
+        data row is emitted as a JSON object keyed by those names, so the JSON
+        Lines parser can pull out timestamp/level/message and populate
+        parsed_fields. Sheets without a usable header fall back to tab-joined
+        plain text (one cell per column).
+        """
+        sheets = wb.worksheets
+        if not sheets:
+            return
+
+        first, *rest = sheets
+        rows = first.iter_rows(values_only=True)
+        first_row = next(rows, None)
+        header = self._xlsx_header(first_row)
+
+        if header is not None:
+            for row in rows:
+                obj = {key: ("" if cell is None else cell) for key, cell in zip(header, row)}
+                yield json.dumps(obj, default=str)
+        else:
+            if first_row is not None:
+                yield _xlsx_row_to_text(first_row)
+            for row in rows:
+                yield _xlsx_row_to_text(row)
+
+        # Extra sheets are uncommon for log exports — always plain text.
+        for sheet in rest:
+            for row in sheet.iter_rows(values_only=True):
+                yield _xlsx_row_to_text(row)
+
+    @staticmethod
+    def _xlsx_header(row) -> list[str] | None:
+        """Return column names if ``row`` looks like a header, else None.
+
+        A header is a row of at least two cells where every cell is a
+        non-empty string (column titles are never numbers or blanks).
+        """
+        if not row or len(row) < 2:
+            return None
+        keys: list[str] = []
+        for cell in row:
+            if not isinstance(cell, str) or not cell.strip():
+                return None
+            keys.append(cell.strip())
+        return keys
+
+
+def _xlsx_row_to_text(row) -> str:
+    return "\t".join("" if cell is None else str(cell) for cell in row)

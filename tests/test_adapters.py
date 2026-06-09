@@ -78,3 +78,42 @@ class TestXlsxFileAdapter:
         errors = [e for e in events if e.severity == Severity.ERROR]
         assert len(errors) == 1
         assert "connection failed" in errors[0].message
+
+
+@pytest.fixture
+def structured_xlsx_log(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    path = tmp_path / "structured.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["timestamp", "level", "message", "logger_name"])
+    ws.append(["2026-06-07 08:15:04.431", "ERROR", "something failed", "app.worker"])
+    ws.append(["2026-06-07 08:15:05.123", "INFO", "request handled", "app.web"])
+    wb.save(path)
+    return path
+
+
+class TestStructuredXlsxFileAdapter:
+    async def test_header_row_is_not_an_event(self, structured_xlsx_log):
+        events = await collect(FileAdapter(structured_xlsx_log))
+        assert len(events) == 2
+
+    async def test_message_extracted_from_column(self, structured_xlsx_log):
+        events = await collect(FileAdapter(structured_xlsx_log))
+        assert events[0].message == "something failed"
+
+    async def test_severity_from_level_column(self, structured_xlsx_log):
+        events = await collect(FileAdapter(structured_xlsx_log))
+        assert events[0].severity == Severity.ERROR
+        assert events[1].severity == Severity.INFO
+
+    async def test_timestamp_parsed(self, structured_xlsx_log):
+        events = await collect(FileAdapter(structured_xlsx_log))
+        assert events[0].timestamp is not None
+        assert events[0].timestamp.year == 2026
+        assert events[0].timestamp.microsecond == 431000
+
+    async def test_parsed_fields_populated(self, structured_xlsx_log):
+        events = await collect(FileAdapter(structured_xlsx_log))
+        assert events[0].parsed_fields["logger_name"] == "app.worker"
+        assert events[0].parsed_fields["level"] == "ERROR"

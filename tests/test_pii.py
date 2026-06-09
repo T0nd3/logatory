@@ -71,8 +71,22 @@ class TestPIIRedactor:
         assert "10.0.0.1" not in result.text
         assert len(result.hits) == 2
 
+    def test_german_phone_redacted(self, redactor):
+        for number in ("+49 30 12345678", "0151 23456789", "030 1234567", "0049301234567"):
+            result = redactor.redact(f"call {number} now")
+            assert number not in result.text, number
+            assert any(repl.startswith("phone_") for _, repl in result.hits), number
 
-class TestDryRunMode:
+    def test_timestamp_not_treated_as_phone(self, redactor):
+        # Regression: the phone pattern used to eat date/time fragments like
+        # "06-07 08" inside an ISO timestamp, corrupting the value.
+        original = "2026-06-07 08:15:04.431 ERROR something failed"
+        result = redactor.redact(original)
+        assert result.text == original
+        assert result.hits == []
+
+
+class TestDryRunRedactor:
     """DRY_RUN reports matches but leaves the input text unchanged."""
 
     def test_text_is_unchanged(self, dry_run_redactor):

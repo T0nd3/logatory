@@ -44,7 +44,11 @@ BUILTIN_PATTERNS: list[PIIPattern] = [
     ),
     PIIPattern(
         name="phone_de",
-        pattern=re.compile(r"\b(?:\+49|0049|0)\s?[\d\s\-/]{7,15}\b"),
+        # German numbers: +49 / 0049 / national 0, then 7-15 digits with
+        # optional space/dash/slash separators *between* digits. Counting only
+        # real digits (not separators) toward the length keeps it from matching
+        # date/time fragments like "06-07 08" inside "2026-06-07 08:15:04".
+        pattern=re.compile(r"(?<!\w)(?:\+49|0049|0)[\s/\-]?\d(?:[\s/\-]?\d){6,14}(?!\w)"),
         prefix="phone",
     ),
     PIIPattern(
