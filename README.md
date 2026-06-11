@@ -985,12 +985,14 @@ api_token: ""
 # findings_min_severity: high   # low | medium | high | critical
 
 llm:
-  provider: ollama              # ollama | claude | openai
+  provider: ollama              # ollama | claude | openai | groq | mistral
   model: gemma3:4b
   endpoint: http://localhost:11434
   temperature: 0.1
   max_context_tokens: 8000
-  # api_key: ""                 # set via LLM_API_KEY env var for cloud providers
+  # api_key: ""                 # cloud providers: set the provider's env var instead
+  #                             #   claude → ANTHROPIC_API_KEY, openai → OPENAI_API_KEY,
+  #                             #   groq → GROQ_API_KEY, mistral → MISTRAL_API_KEY
 
 opensearch:
   host: localhost
@@ -1014,6 +1016,10 @@ opensearch:
 |---|---|
 | `LOGATORY_PII_SALT` | Salt for PII pseudonymisation |
 | `LOGATORY_API_TOKEN` | Bearer token for REST API auth |
+| `ANTHROPIC_API_KEY` | API key when `llm.provider: claude` |
+| `OPENAI_API_KEY` | API key when `llm.provider: openai` |
+| `GROQ_API_KEY` | API key when `llm.provider: groq` |
+| `MISTRAL_API_KEY` | API key when `llm.provider: mistral` |
 | `OPENSEARCH_USERNAME` | OpenSearch basic auth username |
 | `OPENSEARCH_PASSWORD` | OpenSearch basic auth password |
 | `OPENSEARCH_API_KEY` | OpenSearch API key (`id:base64key`) |
@@ -1210,7 +1216,7 @@ llm:
 ```
 
 ```bash
-export LLM_API_KEY=sk-ant-...
+export ANTHROPIC_API_KEY=sk-ant-...
 logatory llm info
 ```
 
@@ -1224,7 +1230,19 @@ llm:
 ```
 
 ```bash
-export LLM_API_KEY=sk-...
+export OPENAI_API_KEY=sk-...
+```
+
+### Groq & Mistral
+
+```yaml
+llm:
+  provider: groq        # or: mistral
+  model: llama-3.3-70b-versatile
+```
+
+```bash
+export GROQ_API_KEY=gsk-...      # mistral → MISTRAL_API_KEY
 ```
 
 > When using a cloud provider, Logatory prints a warning before sending any redacted data to the external API.
