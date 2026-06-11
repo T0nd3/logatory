@@ -12,8 +12,10 @@ from collections.abc import Callable
 from pathlib import Path
 
 from ..adapters.base import SourceAdapter
+from ..adapters.cloudwatch import CloudWatchAdapter
 from ..adapters.docker import DockerAdapter
 from ..adapters.file import FileAdapter
+from ..adapters.gcp_logging import GCPLoggingAdapter
 from ..adapters.graylog import GraylogAdapter
 from ..adapters.journald import JournaldAdapter
 from ..adapters.kubernetes import KubernetesAdapter
@@ -109,6 +111,29 @@ def _build_s3(target: Target) -> SourceAdapter:
     )
 
 
+def _build_cloudwatch(target: Target) -> SourceAdapter:
+    p = target.params
+    return CloudWatchAdapter(
+        log_group=_require(target, "log_group"),
+        log_stream=p.get("log_stream"),
+        filter_pattern=p.get("filter_pattern"),
+        since=p.get("since"),
+        region=p.get("region"),
+        profile=p.get("profile"),
+        limit=_opt_int(p, "limit") or 1000,
+    )
+
+
+def _build_gcp(target: Target) -> SourceAdapter:
+    p = target.params
+    return GCPLoggingAdapter(
+        log_filter=p.get("filter"),
+        project=p.get("project"),
+        since=p.get("since", "1h"),
+        limit=_opt_int(p, "limit") or 1000,
+    )
+
+
 def _build_ssh(target: Target) -> SourceAdapter:
     p = target.params
     return SSHAdapter(
@@ -185,6 +210,8 @@ _BUILDERS: dict[str, Callable[[Target], SourceAdapter]] = {
     "kubernetes": _build_kubernetes,
     "windows": _build_windows,
     "s3": _build_s3,
+    "cloudwatch": _build_cloudwatch,
+    "gcp": _build_gcp,
     "ssh": _build_ssh,
     "loki": _build_loki,
     "graylog": _build_graylog,

@@ -19,6 +19,7 @@ from logatory.anomaly.features import FeatureExtractor
 from logatory.cli import serve_cmd, tail_cmd
 from logatory.cli._types import REDACT_MAP, RedactModeArg
 from logatory.cli.anomaly_cmd import app as anomaly_app
+from logatory.cli.cloudwatch_cmd import app as cloudwatch_app
 from logatory.cli.colors import SEVERITY_COLOR
 from logatory.cli.demo_cmd import app as demo_app
 from logatory.cli.docker_cmd import app as docker_app
@@ -26,6 +27,7 @@ from logatory.cli.errors_cmd import app as errors_app
 from logatory.cli.export_cmd import app as export_app
 from logatory.cli.findings_cmd import app as findings_app
 from logatory.cli.fleet_cmd import app as fleet_app
+from logatory.cli.gcp_cmd import app as gcp_app
 from logatory.cli.graylog_cmd import app as graylog_app
 from logatory.cli.journald_cmd import app as journald_app
 from logatory.cli.kubernetes_cmd import app as kubernetes_app
@@ -62,6 +64,8 @@ app.add_typer(journald_app, name="journald")
 app.add_typer(kubernetes_app, name="kubernetes")
 app.add_typer(windows_app, name="windows")
 app.add_typer(s3_app, name="s3")
+app.add_typer(cloudwatch_app, name="cloudwatch")
+app.add_typer(gcp_app, name="gcp")
 app.add_typer(ssh_app, name="ssh")
 app.add_typer(syslog_app, name="syslog")
 app.add_typer(loki_app, name="loki")

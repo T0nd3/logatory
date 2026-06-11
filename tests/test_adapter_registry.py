@@ -22,6 +22,8 @@ class TestBuiltinRegistry:
             "kubernetes",
             "windows",
             "s3",
+            "cloudwatch",
+            "gcp",
             "syslog",
             "ssh",
             "loki",

@@ -18,8 +18,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .base import SourceAdapter
+from .cloudwatch import CloudWatchAdapter
 from .docker import DockerAdapter
 from .file import FileAdapter
+from .gcp_logging import GCPLoggingAdapter
 from .graylog import GraylogAdapter
 from .journald import JournaldAdapter
 from .kubernetes import KubernetesAdapter
@@ -85,6 +87,8 @@ for _spec in (
     AdapterSpec("kubernetes", KubernetesAdapter),
     AdapterSpec("windows", WindowsEventLogAdapter),
     AdapterSpec("s3", S3Adapter),
+    AdapterSpec("cloudwatch", CloudWatchAdapter),
+    AdapterSpec("gcp", GCPLoggingAdapter),
     AdapterSpec("ssh", SSHAdapter),
     AdapterSpec("loki", LokiAdapter),
     AdapterSpec("graylog", GraylogAdapter),

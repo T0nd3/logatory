@@ -52,6 +52,8 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
   - [Windows Event Log](#windows-event-log)
   - [S3 / object storage](#s3--object-storage)
   - [Syslog listener](#syslog-listener)
+  - [AWS CloudWatch Logs](#aws-cloudwatch-logs)
+  - [GCP Cloud Logging](#gcp-cloud-logging)
   - [systemd journal](#systemd-journal-journald)
   - [Remote servers (SSH)](#remote-servers-ssh)
   - [tail](#tail)
@@ -100,6 +102,8 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | **Windows Event Log** | Analyze a JSON event export anywhere (even on Linux), or read a live log on Windows via `Get-WinEvent` |
 | **S3 / object storage** | Read log objects straight from a bucket via the `aws` CLI — AWS S3 or any S3-compatible store; gzip decompressed on the fly |
 | **Syslog listener** | Bind UDP/TCP 514 and receive syslog (RFC 3164 / RFC 5424) from network devices, firewalls and appliances |
+| **AWS CloudWatch** | Pull events from a CloudWatch log group via the `aws` CLI — no boto3; scan or follow live |
+| **GCP Cloud Logging** | Read entries via the `gcloud` CLI — no google-cloud dependency; scan or follow live with native severities |
 | **Remote over SSH** | Pull logs from any SSH-reachable host — no agent on the remote box; scan or follow live with auto-reconnect |
 | **Grafana Loki** | Query a Loki instance with LogQL — scan or follow live |
 | **Graylog** | Query a Graylog server via its search API — scan or follow live |
@@ -389,6 +393,58 @@ logatory syslog scan --port 5514 --max-messages 200
 TCP framing follows RFC 6587 — both octet-counting (`<len> <msg>`) and
 newline-delimited messages are handled. Like `stdin` and `tail`, the syslog
 listener is a local, stream-only source, so it isn't a fleet target.
+
+---
+
+### AWS CloudWatch Logs
+
+If your workloads ship to CloudWatch, this source pulls events straight from
+a log group via the `aws` CLI — no boto3, no extra Python dependency. Your
+configured AWS credentials, region and profile all apply unchanged, and access
+is read-only. Each event's message is parsed like any other source (Syslog,
+JSON, Nginx, …) and tagged with its log group and stream.
+
+```bash
+# Fetch a batch from a log group, last hour, redact and run rules
+logatory cloudwatch scan --log-group /app/prod --since 1h
+
+# Narrow to a single stream and a CloudWatch filter pattern
+logatory cloudwatch scan -g /app/prod -s web-1 --filter ERROR --region eu-central-1
+
+# Follow the group live, alerting on high-severity findings
+logatory cloudwatch tail --log-group /app/prod --profile prod \
+    --alert-webhook https://hooks.example/logs
+```
+
+`cloudwatch tail` advances a timestamp cursor every `--poll-interval` seconds
+and de-duplicates on each event's `eventId`, so the inclusive `--start-time`
+boundary never yields the same line twice.
+
+---
+
+### GCP Cloud Logging
+
+For workloads on Google Cloud, this source reads entries through `gcloud
+logging read` — no `google-cloud` dependency; your active `gcloud` account,
+ADC and project apply unchanged, read-only. Entries are selected with a Cloud
+Logging filter (and a freshness window), and each entry's authoritative
+severity and timestamp are mapped straight onto Logatory's model.
+
+```bash
+# Fetch the last hour of entries from the default project
+logatory gcp scan --since 1h
+
+# Filter server-side and target a project
+logatory gcp scan --filter 'severity>=ERROR' --project my-proj --since 2h
+
+# Follow live, alerting on high-severity findings
+logatory gcp tail --filter 'resource.type="k8s_container"' \
+    --alert-webhook https://hooks.example/logs
+```
+
+`gcp tail` AND-s a `timestamp > "…"` clause onto your filter each round and
+de-duplicates on each entry's `insertId`, so only newly-arrived entries are
+delivered.
 
 ---
 
@@ -786,7 +842,7 @@ Authenticate with a Graylog access token (`GRAYLOG_TOKEN`) or with
 Most Logatory commands read one source. **Fleet** lets you declare many
 sources in a `targets.yaml` and scan, follow, or manage them all at once —
 each target can be any supported type (file, journald, docker, kubernetes,
-windows, s3, ssh, opensearch, loki, graylog).
+windows, s3, cloudwatch, gcp, ssh, opensearch, loki, graylog).
 
 Build the file interactively — the wizard prompts for each target's fields
 and keeps secrets out of the file as `${ENV_VAR}` references:

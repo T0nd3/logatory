@@ -61,6 +61,19 @@ TYPE_FIELDS: dict[str, list[Field]] = {
         Field("region", "AWS region (optional)"),
         Field("profile", "AWS profile name (optional)"),
     ],
+    "cloudwatch": [
+        Field("log_group", "CloudWatch log group name", required=True),
+        Field("log_stream", "Single log stream to read (optional)"),
+        Field("filter_pattern", "CloudWatch filter pattern (optional)"),
+        Field("since", "Lookback window, e.g. 1h, 30m (optional)"),
+        Field("region", "AWS region (optional)"),
+        Field("profile", "AWS profile name (optional)"),
+    ],
+    "gcp": [
+        Field("filter", "Cloud Logging filter, e.g. severity>=ERROR (optional)"),
+        Field("project", "GCP project ID (optional)"),
+        Field("since", "Freshness window, e.g. 1h", default="1h"),
+    ],
     "ssh": [
         Field("host", "SSH host — user@host or an ssh-config alias", required=True),
         Field("journald", "Read the remote systemd journal (instead of a file)?", kind="bool"),
