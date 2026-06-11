@@ -1,5 +1,6 @@
 from logatory.models import Severity
 from logatory.parsers.json_lines import JsonLinesParser
+from logatory.parsers.logfmt import LogfmtParser
 from logatory.parsers.nginx import NginxCombinedParser
 from logatory.parsers.syslog import AuthLogParser, SyslogParser
 
@@ -40,6 +41,63 @@ class TestJsonLinesParser:
         event = self.parser.parse(line)
         assert event is not None
         assert event.timestamp is not None
+
+
+class TestLogfmtParser:
+    def setup_method(self):
+        self.parser = LogfmtParser("test")
+
+    def test_basic_event(self):
+        line = 'ts=2026-06-07T08:15:04Z level=error msg="db down" service=api'
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.message == "db down"
+        assert event.severity == Severity.ERROR
+        assert event.timestamp is not None
+        assert event.parsed_fields["service"] == "api"
+
+    def test_quoted_value_with_spaces(self):
+        event = self.parser.parse('level=info msg="user bob logged in" user=bob')
+        assert event.message == "user bob logged in"
+        assert event.parsed_fields["user"] == "bob"
+
+    def test_escaped_quote_in_value(self):
+        event = self.parser.parse(r'level=info msg="say \"hi\" now"')
+        assert event.message == 'say "hi" now'
+
+    def test_level_variants(self):
+        for raw, expected in (
+            ("warn", Severity.WARNING),
+            ("warning", Severity.WARNING),
+            ("err", Severity.ERROR),
+            ("crit", Severity.CRITICAL),
+            ("debug", Severity.DEBUG),
+        ):
+            event = self.parser.parse(f"level={raw} msg=hello there=1")
+            assert event.severity == expected, f"failed for level={raw}"
+
+    def test_unix_timestamp(self):
+        event = self.parser.parse("ts=1747555200 level=info msg=boot extra=1")
+        assert event is not None
+        assert event.timestamp is not None
+
+    def test_bare_values_preserved(self):
+        event = self.parser.parse("method=GET path=/health status=200 dur=1.2s")
+        assert event.parsed_fields["method"] == "GET"
+        assert event.parsed_fields["status"] == "200"
+        assert event.parsed_fields["dur"] == "1.2s"
+
+    def test_message_falls_back_to_raw(self):
+        # No msg/message key → the whole line is the message.
+        event = self.parser.parse("foo=1 bar=2")
+        assert event.message == "foo=1 bar=2"
+
+    def test_empty_line_returns_none(self):
+        assert self.parser.parse("") is None
+        assert self.parser.parse("   ") is None
+
+    def test_no_pairs_returns_none(self):
+        assert self.parser.parse("just some plain words here") is None
 
 
 class TestNginxCombinedParser:

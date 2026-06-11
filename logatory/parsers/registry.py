@@ -1,6 +1,7 @@
 from .base import BaseParser
 from .detector import LogFormat
 from .json_lines import JsonLinesParser
+from .logfmt import LogfmtParser
 from .nginx import NginxCombinedParser
 from .plaintext import PlaintextParser
 from .syslog import AuthLogParser, SyslogParser
@@ -16,5 +17,7 @@ def get_parser(fmt: LogFormat, source: str) -> BaseParser:
             return SyslogParser(source)
         case LogFormat.AUTH_LOG:
             return AuthLogParser(source)
+        case LogFormat.LOGFMT:
+            return LogfmtParser(source)
         case _:
             return PlaintextParser(source)

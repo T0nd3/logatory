@@ -5,12 +5,15 @@ import re
 from enum import Enum
 from pathlib import Path
 
+from .logfmt import looks_like_logfmt
+
 
 class LogFormat(str, Enum):
     JSON_LINES = "json_lines"
     NGINX_COMBINED = "nginx_combined"
     SYSLOG = "syslog"
     AUTH_LOG = "auth_log"
+    LOGFMT = "logfmt"
     PLAINTEXT = "plaintext"
 
 
@@ -40,6 +43,10 @@ class FormatDetector:
         syslog_hits = sum(1 for line in non_empty if _SYSLOG_RE.match(line))
         if syslog_hits / len(non_empty) >= 0.6:
             return LogFormat.SYSLOG
+
+        logfmt_hits = sum(1 for line in non_empty if looks_like_logfmt(line))
+        if logfmt_hits / len(non_empty) >= 0.8:
+            return LogFormat.LOGFMT
 
         return LogFormat.PLAINTEXT
 

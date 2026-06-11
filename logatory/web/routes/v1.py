@@ -75,7 +75,7 @@ class EventIn(BaseModel):
 
     raw: str
     source: str = "api-ingest"
-    format: Optional[str] = None  # syslog | nginx | json_lines | plaintext
+    format: Optional[str] = None  # syslog | nginx | json_lines | logfmt | plaintext
 
 
 class EventOut(BaseModel):
@@ -209,7 +209,7 @@ def v1_ingest(
     Returns any triggered findings. Events are NOT persisted — use
     `logatory scan --track-errors` for batch persistence.
 
-    **format** (optional): `syslog`, `nginx`, `json_lines`, `plaintext`.
+    **format** (optional): `syslog`, `nginx`, `json_lines`, `logfmt`, `plaintext`.
     Auto-detected if omitted.
     """
     from logatory.parsers.detector import FormatDetector, LogFormat

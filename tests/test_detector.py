@@ -36,5 +36,16 @@ def test_detects_syslog():
     assert FormatDetector().detect(sample) == LogFormat.SYSLOG
 
 
+def test_detects_logfmt():
+    sample = _sample("logfmt.log")
+    assert FormatDetector().detect(sample) == LogFormat.LOGFMT
+
+
+def test_prose_with_stray_pair_is_not_logfmt():
+    # A sentence that merely contains "x=5" must not be mistaken for logfmt.
+    sample = ["the result was x=5 after the computation finished successfully"]
+    assert FormatDetector().detect(sample) == LogFormat.PLAINTEXT
+
+
 def test_empty_sample_returns_plaintext():
     assert FormatDetector().detect([]) == LogFormat.PLAINTEXT

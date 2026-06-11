@@ -1,0 +1,5 @@
+ts=2026-06-07T08:15:04Z level=info msg="server started" port=8080 service=api
+ts=2026-06-07T08:15:05Z level=warn msg="cache miss" key=user:42 service=api
+ts=2026-06-07T08:15:06Z level=error msg="db connection failed" attempt=3 service=api
+ts=2026-06-07T08:15:07Z level=info msg="request handled" method=GET path=/health status=200
+ts=2026-06-07T08:15:08Z level=debug msg="worker idle" worker=2 service=api
