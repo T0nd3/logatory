@@ -87,8 +87,8 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | Capability | Details |
 |---|---|
 | **Format support** | Syslog, Nginx access/error, JSON Lines, logfmt, CEF, LEEF, plaintext — auto-detected; reads plain, gzip, and `.xlsx` files |
-| **PII redaction** | Emails, IPs, credit cards, phone numbers, UUIDs, JWTs, SSH keys — deterministic pseudonymisation or masking |
-| **Rule engine** | YAML-based rules with `contains`, `regex`, `startswith`, `endswith`, `gte`, `lte` operators; multi-field AND/OR |
+| **PII redaction** | Emails, IPv4/IPv6, credit cards (Luhn-checked), IBANs, German phone numbers — deterministic pseudonymisation or masking |
+| **Rule engine** | YAML-based rules with `eq`, `ne`, `contains`, `startswith`, `endswith`, `re`, `gt`, `lt`, `gte`, `lte` operators; multi-field AND/OR |
 | **Sigma support** | Convert Sigma rules to native format |
 | **Anomaly detection** | Statistical Z-score baseline over 60-second buckets, trains automatically from historical logs |
 | **LLM integration** | Ollama (default), Claude, OpenAI-compatible APIs; explain findings, summarize errors, RAG Q&A |
@@ -111,7 +111,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | **Finding persistence** | SQLite store for HIGH/CRITICAL findings with retention, dedup, severity filtering |
 | **FP suppression** | Dismiss rules globally or per source file; reversible |
 | **Markdown export** | Automated security reports from the SQLite database |
-| **Plugin system** | Drop Python files into a directory to add custom rules and PII patterns |
+| **Plugin system** | Drop Python files into a directory to add custom rules, PII patterns, parsers and source adapters |
 | **Docker** | Multi-stage image, non-root user, `/data` volume — production-ready |
 
 ---
@@ -584,8 +584,8 @@ logatory findings list [--severity high] [--source nginx.log] [--since 7d] [-n 1
 Show all stored occurrences for a specific rule:
 
 ```bash
-logatory findings show SSH_BRUTE_FORCE
-logatory findings show SSH_BRUTE_FORCE -n 50
+logatory findings show ssh_brute_force
+logatory findings show ssh_brute_force -n 50
 ```
 
 #### `findings summary`
@@ -602,10 +602,10 @@ Suppress a rule so future scans and tail sessions skip it:
 
 ```bash
 # Global false-positive — suppress everywhere
-logatory findings dismiss SSH_BRUTE_FORCE --reason "internal bastion host"
+logatory findings dismiss ssh_brute_force --reason "internal bastion host"
 
 # Suppress only for one source file
-logatory findings dismiss NGINX_404_SCAN --source nginx.log --reason "internal scanner"
+logatory findings dismiss nginx_404_scan --source nginx.log --reason "internal scanner"
 ```
 
 #### `findings undismiss <RULE_ID>`
@@ -613,7 +613,7 @@ logatory findings dismiss NGINX_404_SCAN --source nginx.log --reason "internal s
 Re-enable a suppressed rule:
 
 ```bash
-logatory findings undismiss SSH_BRUTE_FORCE
+logatory findings undismiss ssh_brute_force
 ```
 
 #### `findings dismissed`
@@ -1034,7 +1034,7 @@ PII redaction runs on every log line before analysis. Three modes are available 
 | `mask` | Replaces PII with a generic tag: `<email>` | Maximum anonymity |
 | `dry-run` | Reports PII hits without changing the text | Audit what would be redacted |
 
-**Built-in patterns:** email addresses, IPv4/IPv6, credit cards (Luhn-validated), phone numbers (international), UUIDs, JWTs, SSH private keys.
+**Built-in patterns:** email addresses, IPv4/IPv6 addresses, credit cards (Luhn-validated), IBANs, German phone numbers (`+49` / `0049` / national `0`).
 
 ### Custom PII patterns
 
@@ -1063,13 +1063,13 @@ Rules live in `logatory/rules/builtin/` (shipped) or any YAML file you point to 
 
 | ID | Severity | Triggers on |
 |---|---|---|
-| `SSH_BRUTE_FORCE` | high | Multiple SSH auth failures from one host |
-| `SUDO_MISUSE` | high | `sudo: auth failure` / `sudo: user NOT in sudoers` |
-| `AUTH_NEW_UID0` | critical | New UID 0 account created |
-| `NGINX_404_SCAN` | medium | High rate of 404 responses (scanner pattern) |
-| `NGINX_5XX_SPIKE` | high | Multiple 5xx errors in a short window |
-| `WIN_FAILED_LOGON` | medium | Windows Event ID 4625 (failed logon) |
-| `WIN_ACCOUNT_CREATED` | medium | Windows Event ID 4720 (account created) |
+| `ssh_brute_force` | high | Multiple SSH auth failures from one host |
+| `sudo_misuse` | low | A command run as root via `sudo` (`USER=root`), for audit |
+| `auth_new_uid0` | critical | New UID 0 account created |
+| `nginx_404_scan` | medium | High rate of 404 responses (scanner pattern) |
+| `nginx_5xx_spike` | high | Multiple 5xx errors in a short window |
+| `win_failed_logon` | high | Windows Event ID 4625 (failed logon) |
+| `win_account_created` | medium | Windows Event ID 4720 (account created) |
 
 ### Writing custom rules
 
@@ -1084,12 +1084,12 @@ detection:
       op: contains
       value: "/etc/passwd"
     - field: message
-      op: regex
+      op: re
       value: 'GET\s+/etc/passwd'
   condition: any   # any (OR) | all (AND, default)
 ```
 
-**Supported operators:** `contains`, `not_contains`, `regex`, `not_regex`, `startswith`, `endswith`, `equals`, `gte`, `lte`.
+**Supported operators:** `eq`, `ne`, `contains`, `startswith`, `endswith`, `re` (regex), `gt`, `lt`, `gte`, `lte`.
 
 Validate a rule before using it:
 
@@ -1109,7 +1109,7 @@ logatory rules validate sigma_rule.yml --sigma
 
 ## Plugin System
 
-Drop Python files into a directory and register custom rules and PII patterns. Enable in `config.yaml`:
+Drop Python files into a directory and register custom rules, PII patterns, log-format parsers and source adapters. Enable in `config.yaml`:
 
 ```yaml
 plugins_dir: plugins/
@@ -1129,7 +1129,7 @@ def register(registry) -> None:
         "level": "critical",
         "detection": {
             "match": [
-                {"field": "message", "op": "regex", "value": r"postgresql://\S+:\S+@"},
+                {"field": "message", "op": "re", "value": r"postgresql://\S+:\S+@"},
             ]
         },
     })
@@ -1144,9 +1144,15 @@ def register(registry) -> None:
     # Load an entire directory of YAML rule files
     from pathlib import Path
     registry.add_rule_dir(Path(__file__).parent / "my_rules")
+
+    # Custom log-format parser — auto-detected like any built-in format
+    # registry.add_parser(name="myfmt", detect=looks_like_myfmt, factory=MyParser)
+
+    # Custom source adapter — looked up by name like any built-in source
+    # registry.add_adapter(name="kafka", adapter_cls=KafkaAdapter)
 ```
 
-Plugin rules participate in both `logatory scan`, `logatory tail`, and the web dashboard rule engine. Plugin PII patterns apply to every redaction pass. A plugin that raises an exception is logged as a warning and skipped — it never crashes the host process.
+Plugin rules participate in `logatory scan`, `logatory tail`, and the web dashboard rule engine. Plugin PII patterns apply to every redaction pass; plugin parsers and adapters register into the global parser/adapter registries, so format auto-detection and source lookup pick them up everywhere. A plugin that raises an exception is logged as a warning and skipped — it never crashes the host process.
 
 ---
 
