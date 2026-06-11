@@ -244,6 +244,43 @@ class TestTailAdapterFormatDetection:
         adapter = TailAdapter(log, from_start=True)
         assert adapter._detect_format() == LogFormat.JSON_LINES
 
+    def test_detects_logfmt(self, tmp_path: Path):
+        from logatory.parsers.detector import LogFormat
+
+        log = tmp_path / "app.log"
+        _write(log, "level=info msg=started port=8080\nlevel=warn msg=slow ms=210\n")
+        adapter = TailAdapter(log, from_start=True)
+        assert adapter._detect_format() == LogFormat.LOGFMT
+
+    def test_detects_cef(self, tmp_path: Path):
+        from logatory.parsers.detector import LogFormat
+
+        log = tmp_path / "app.log"
+        _write(log, "CEF:0|V|FW|1.0|100|blocked|8|src=10.0.0.1 dst=8.8.8.8\n")
+        adapter = TailAdapter(log, from_start=True)
+        assert adapter._detect_format() == LogFormat.CEF
+
+
+# ---------------------------------------------------------------------------
+# TailAdapter — construction defaults
+# ---------------------------------------------------------------------------
+
+
+class TestTailAdapterDefaults:
+    def test_default_poll_interval(self, tmp_path: Path):
+        adapter = TailAdapter(tmp_path / "x.log")
+        assert adapter.poll_interval > 0
+        assert adapter.from_start is False
+
+    def test_logfmt_fields_parsed_from_tail(self, tmp_path: Path):
+        log = tmp_path / "app.log"
+        _write(log, "level=error msg=db_down attempt=3 service=api\n")
+        adapter = TailAdapter(log, from_start=True, poll_interval=0.05)
+        events = asyncio.run(_collect(adapter, 1))
+        assert len(events) == 1
+        assert events[0].parsed_fields["service"] == "api"
+        assert events[0].message == "db_down"
+
 
 # ---------------------------------------------------------------------------
 # meets_alert_severity
