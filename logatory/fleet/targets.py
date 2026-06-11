@@ -15,8 +15,11 @@ from pathlib import Path
 
 import yaml
 
-# Target types that map to a source adapter (stdin is excluded — not per-host).
-TARGET_TYPES = frozenset({"file", "journald", "docker", "ssh", "opensearch", "loki", "graylog"})
+from ..adapters import fleet_target_types
+
+# Target types that map to a source adapter, taken straight from the adapter
+# registry (stdin and tail are excluded there — they aren't per-host sources).
+TARGET_TYPES = fleet_target_types()
 
 _ENV_RE = re.compile(r"\$\{(\w+)\}")
 
