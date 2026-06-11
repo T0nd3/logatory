@@ -54,6 +54,13 @@ TYPE_FIELDS: dict[str, list[Field]] = {
         Field("log", "Windows log name for live mode, e.g. System (optional)"),
         Field("provider", "Provider name filter, live mode (optional)"),
     ],
+    "s3": [
+        Field("bucket", "Bucket name", required=True),
+        Field("prefix", "Key prefix to filter objects (optional)"),
+        Field("endpoint_url", "Custom endpoint for S3-compatible stores (optional)"),
+        Field("region", "AWS region (optional)"),
+        Field("profile", "AWS profile name (optional)"),
+    ],
     "ssh": [
         Field("host", "SSH host — user@host or an ssh-config alias", required=True),
         Field("journald", "Read the remote systemd journal (instead of a file)?", kind="bool"),

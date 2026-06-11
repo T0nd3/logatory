@@ -677,6 +677,9 @@ def _probe(target: Target, timeout: float) -> tuple[bool, str]:
                 return ok, "" if ok else "file not found"
             ok = shutil.which("powershell") is not None or shutil.which("pwsh") is not None
             return ok, "" if ok else "powershell not on PATH"
+        if target.type == "s3":
+            ok = shutil.which("aws") is not None
+            return ok, "" if ok else "aws CLI not on PATH"
         if target.type in ("loki", "graylog", "opensearch"):
             return _http_reachable(_endpoint_url(target), timeout)
         return False, "unknown type"

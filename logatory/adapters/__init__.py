@@ -25,6 +25,7 @@ from .journald import JournaldAdapter
 from .kubernetes import KubernetesAdapter
 from .loki import LokiAdapter
 from .opensearch import OpenSearchAdapter
+from .s3 import S3Adapter
 from .ssh import SSHAdapter
 from .stdin import StdinAdapter
 from .tail import TailAdapter
@@ -82,6 +83,7 @@ for _spec in (
     AdapterSpec("docker", DockerAdapter),
     AdapterSpec("kubernetes", KubernetesAdapter),
     AdapterSpec("windows", WindowsEventLogAdapter),
+    AdapterSpec("s3", S3Adapter),
     AdapterSpec("ssh", SSHAdapter),
     AdapterSpec("loki", LokiAdapter),
     AdapterSpec("graylog", GraylogAdapter),

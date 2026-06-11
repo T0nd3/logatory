@@ -50,6 +50,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
   - [Docker container logs](#docker-container-logs)
   - [Kubernetes pods](#kubernetes-pods)
   - [Windows Event Log](#windows-event-log)
+  - [S3 / object storage](#s3--object-storage)
   - [systemd journal](#systemd-journal-journald)
   - [Remote servers (SSH)](#remote-servers-ssh)
   - [tail](#tail)
@@ -96,6 +97,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | **Docker logs** | Read container logs straight from the Docker daemon — scan or follow, no log stack required |
 | **Kubernetes** | Read pod logs through `kubectl` — by namespace, label selector or pod; scan or follow, no log stack required |
 | **Windows Event Log** | Analyze a JSON event export anywhere (even on Linux), or read a live log on Windows via `Get-WinEvent` |
+| **S3 / object storage** | Read log objects straight from a bucket via the `aws` CLI — AWS S3 or any S3-compatible store; gzip decompressed on the fly |
 | **Remote over SSH** | Pull logs from any SSH-reachable host — no agent on the remote box; scan or follow live with auto-reconnect |
 | **Grafana Loki** | Query a Loki instance with LogQL — scan or follow live |
 | **Graylog** | Query a Graylog server via its search API — scan or follow live |
@@ -320,6 +322,40 @@ Each record's Windows level becomes a severity (Critical/Error/Warning/…),
 `TimeCreated` the timestamp, and the event ID, provider, log name and machine
 are kept in the event's fields. `windows tail` de-duplicates by RecordId, so
 each event is delivered exactly once across polls.
+
+---
+
+### S3 / object storage
+
+Logs shipped to object storage (S3, or any S3-compatible store like MinIO,
+Cloudflare R2, Backblaze B2, Wasabi, …) can be analysed straight from the
+bucket — no download-and-unzip dance. The adapter shells out to the system
+`aws` CLI (no boto3 dependency), so your AWS profile, SSO session, instance
+role and `~/.aws/config` all apply unchanged. Read-only — it only ever runs
+`list-objects-v2` and `s3 cp`.
+
+```bash
+# Scan every object under a prefix
+logatory s3 scan --bucket my-logs --prefix app/2026/06/
+
+# Limit how many objects to read, and persist errors
+logatory s3 scan --bucket my-logs --prefix app/ --max-objects 100 --track-errors
+
+# Watch a bucket for new objects in real time (Ctrl+C to stop)
+logatory s3 tail --bucket my-logs --prefix app/ --poll-interval 30
+```
+
+Point `--endpoint-url` at a non-AWS host to read from any S3-compatible
+service (use `--region`/`--profile` as needed):
+
+```bash
+logatory s3 scan --bucket logs --endpoint-url http://minio.internal:9000
+```
+
+Each object's body is streamed and parsed exactly like any other source
+(JSON, logfmt, plaintext, …); gzip-compressed objects (`*.gz`) are
+decompressed transparently. Every event is tagged with its bucket and key.
+Because S3 objects are immutable, `s3 tail` reads each new key exactly once.
 
 ---
 
@@ -717,7 +753,7 @@ Authenticate with a Graylog access token (`GRAYLOG_TOKEN`) or with
 Most Logatory commands read one source. **Fleet** lets you declare many
 sources in a `targets.yaml` and scan, follow, or manage them all at once —
 each target can be any supported type (file, journald, docker, kubernetes,
-windows, ssh, opensearch, loki, graylog).
+windows, s3, ssh, opensearch, loki, graylog).
 
 Build the file interactively — the wizard prompts for each target's fields
 and keeps secrets out of the file as `${ENV_VAR}` references:

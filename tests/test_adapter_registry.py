@@ -21,6 +21,7 @@ class TestBuiltinRegistry:
             "docker",
             "kubernetes",
             "windows",
+            "s3",
             "ssh",
             "loki",
             "graylog",

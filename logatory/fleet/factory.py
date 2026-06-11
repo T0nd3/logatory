@@ -25,6 +25,7 @@ from ..adapters.opensearch_config import (
     OpenSearchQuery,
     TimeRange,
 )
+from ..adapters.s3 import S3Adapter
 from ..adapters.ssh import SSHAdapter
 from ..adapters.windows import WindowsEventLogAdapter
 from .targets import Target, TargetConfigError
@@ -93,6 +94,18 @@ def _build_windows(target: Target) -> SourceAdapter:
         log=p.get("log"),
         max_events=_opt_int(p, "max_events") or 200,
         provider=p.get("provider"),
+    )
+
+
+def _build_s3(target: Target) -> SourceAdapter:
+    p = target.params
+    return S3Adapter(
+        bucket=_require(target, "bucket"),
+        prefix=p.get("prefix"),
+        endpoint_url=p.get("endpoint_url"),
+        region=p.get("region"),
+        profile=p.get("profile"),
+        max_objects=_opt_int(p, "max_objects") or 50,
     )
 
 
@@ -171,6 +184,7 @@ _BUILDERS: dict[str, Callable[[Target], SourceAdapter]] = {
     "docker": _build_docker,
     "kubernetes": _build_kubernetes,
     "windows": _build_windows,
+    "s3": _build_s3,
     "ssh": _build_ssh,
     "loki": _build_loki,
     "graylog": _build_graylog,
