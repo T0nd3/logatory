@@ -1310,6 +1310,32 @@ curl -X POST http://localhost:8080/api/v1/events \
   -d '{"raw": "Failed password for root from 1.2.3.4 port 22", "source": "sshd"}'
 ```
 
+### Why don't my scans show up in the dashboard?
+
+The trend chart and findings tables read **only** from the SQLite database. A scan
+appears in the dashboard only if it was *persisted*, and persistence has three gotchas:
+
+1. **`scan` persists nothing by default.** You must pass `--track-errors`:
+   ```bash
+   logatory scan /var/log/app.log --track-errors
+   ```
+2. **Only findings ≥ `findings_min_severity` are saved** (default `high`). MEDIUM/LOW
+   findings are never written. Lower the threshold in `config.yaml` if needed:
+   ```yaml
+   findings_min_severity: low   # low | medium | high | critical
+   ```
+3. **`scan` and `serve` must use the same database.** `db_path` defaults to
+   `logatory.db` *relative to the current working directory*, so running the two
+   commands from different folders writes to / reads from different DB files. Set an
+   absolute path to be safe:
+   ```yaml
+   db_path: /data/logatory.db
+   ```
+
+The browser **`/upload`** page is intentionally **transient** — it never persists, so
+uploads there will not appear in the trend chart. Use `logatory scan --track-errors`
+to populate the dashboard.
+
 ---
 
 ## Docker
