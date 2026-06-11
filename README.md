@@ -86,7 +86,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 
 | Capability | Details |
 |---|---|
-| **Format support** | Syslog, Nginx access/error, JSON Lines, plaintext — auto-detected; reads plain, gzip, and `.xlsx` files |
+| **Format support** | Syslog, Nginx access/error, JSON Lines, logfmt, CEF, LEEF, plaintext — auto-detected; reads plain, gzip, and `.xlsx` files |
 | **PII redaction** | Emails, IPs, credit cards, phone numbers, UUIDs, JWTs, SSH keys — deterministic pseudonymisation or masking |
 | **Rule engine** | YAML-based rules with `contains`, `regex`, `startswith`, `endswith`, `gte`, `lte` operators; multi-field AND/OR |
 | **Sigma support** | Convert Sigma rules to native format |

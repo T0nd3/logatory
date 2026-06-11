@@ -1,4 +1,5 @@
 from .base import BaseParser
+from .cef_leef import CEFParser, LEEFParser
 from .detector import LogFormat
 from .json_lines import JsonLinesParser
 from .logfmt import LogfmtParser
@@ -20,6 +21,10 @@ def get_parser(fmt: LogFormat | str, source: str) -> BaseParser:
             return AuthLogParser(source)
         case LogFormat.LOGFMT:
             return LogfmtParser(source)
+        case LogFormat.CEF:
+            return CEFParser(source)
+        case LogFormat.LEEF:
+            return LEEFParser(source)
         case _:
             # A plugin-registered parser is identified by its name string
             # (what FormatDetector.detect returns for it). Fall back to

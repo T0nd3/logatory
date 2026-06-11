@@ -5,6 +5,7 @@ import re
 from enum import Enum
 from pathlib import Path
 
+from .cef_leef import looks_like_cef, looks_like_leef
 from .logfmt import looks_like_logfmt
 from .plugins import plugin_parsers
 
@@ -15,6 +16,8 @@ class LogFormat(str, Enum):
     SYSLOG = "syslog"
     AUTH_LOG = "auth_log"
     LOGFMT = "logfmt"
+    CEF = "cef"
+    LEEF = "leef"
     PLAINTEXT = "plaintext"
 
 
@@ -32,6 +35,16 @@ class FormatDetector:
         json_hits = sum(1 for line in non_empty if self._is_json(line))
         if json_hits / len(non_empty) >= 0.8:
             return LogFormat.JSON_LINES
+
+        # CEF/LEEF carry a distinctive marker and are often wrapped in a syslog
+        # prefix, so they must be checked before the syslog rule below.
+        cef_hits = sum(1 for line in non_empty if looks_like_cef(line))
+        if cef_hits / len(non_empty) >= 0.6:
+            return LogFormat.CEF
+
+        leef_hits = sum(1 for line in non_empty if looks_like_leef(line))
+        if leef_hits / len(non_empty) >= 0.6:
+            return LogFormat.LEEF
 
         auth_hits = sum(1 for line in non_empty if _AUTH_LOG_RE.match(line))
         if auth_hits / len(non_empty) >= 0.6:

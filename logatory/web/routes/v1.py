@@ -209,8 +209,8 @@ def v1_ingest(
     Returns any triggered findings. Events are NOT persisted — use
     `logatory scan --track-errors` for batch persistence.
 
-    **format** (optional): `syslog`, `nginx`, `json_lines`, `logfmt`, `plaintext`.
-    Auto-detected if omitted.
+    **format** (optional): `syslog`, `nginx`, `json_lines`, `logfmt`, `cef`,
+    `leef`, `plaintext`. Auto-detected if omitted.
     """
     from logatory.parsers.detector import FormatDetector, LogFormat
     from logatory.parsers.registry import get_parser

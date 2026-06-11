@@ -1,0 +1,5 @@
+LEEF:1.0|Vendor|Product|1.0|anomaly|src=10.0.0.1	dst=2.1.2.2	sev=5	msg=traffic anomaly
+LEEF:2.0|IBM|QRadar|3.1|auth_fail|^|src=192.168.1.5^usrName=bob^sev=7^msg=login failed
+LEEF:1.0|Vendor|Firewall|2.0|deny|src=10.0.0.7	dst=8.8.8.8	dstPort=53	sev=3
+LEEF:2.0|Acme|IDS|1.0|scan|^|src=203.0.113.9^cnt=17^sev=8^msg=port scan
+LEEF:1.0|Vendor|Proxy|1.0|allow|src=10.0.0.4	dst=example.com	sev=2

@@ -1,0 +1,5 @@
+CEF:0|Security|threatmanager|1.0|100|worm successfully stopped|10|src=10.0.0.1 dst=2.1.2.2 spt=1232
+CEF:0|Vendor|Firewall|2.3|200|connection blocked|6|src=192.168.1.5 dst=8.8.8.8 dpt=443 proto=TCP
+CEF:0|Vendor|IDS|1.1|300|port scan detected|8|src=10.0.0.99 cnt=42 act=blocked
+CEF:0|Acme|WAF|4.0|400|sql injection attempt|9|src=203.0.113.7 request=/login msg=blocked\=true
+CEF:0|Acme|Proxy|1.0|500|url allowed|2|src=10.0.0.4 dst=example.com act=allow
