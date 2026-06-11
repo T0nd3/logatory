@@ -6,6 +6,7 @@ from enum import Enum
 from pathlib import Path
 
 from .logfmt import looks_like_logfmt
+from .plugins import plugin_parsers
 
 
 class LogFormat(str, Enum):
@@ -23,7 +24,7 @@ _AUTH_LOG_RE = re.compile(r"^\w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \S+ (sshd|sudo|su
 
 
 class FormatDetector:
-    def detect(self, sample_lines: list[str], path: Path | None = None) -> LogFormat:
+    def detect(self, sample_lines: list[str], path: Path | None = None) -> LogFormat | str:
         non_empty = [line.strip() for line in sample_lines if line.strip()]
         if not non_empty:
             return LogFormat.PLAINTEXT
@@ -47,6 +48,12 @@ class FormatDetector:
         logfmt_hits = sum(1 for line in non_empty if looks_like_logfmt(line))
         if logfmt_hits / len(non_empty) >= 0.8:
             return LogFormat.LOGFMT
+
+        # Plugin-registered parsers get a chance before the plaintext fallback;
+        # the first whose detect() accepts the sample wins, identified by name.
+        for plugin in plugin_parsers():
+            if plugin.detect(non_empty):
+                return plugin.name
 
         return LogFormat.PLAINTEXT
 

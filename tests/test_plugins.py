@@ -143,3 +143,140 @@ class TestLoadPlugins:
         registry = load_plugins(tmp_path)
         assert len(registry.rules) == 1
         assert registry.rules[0].id == "PLUGIN_RULE_01"
+
+
+# ---------------------------------------------------------------------------
+# add_parser() — global parser registry integration
+# ---------------------------------------------------------------------------
+
+
+class TestAddParser:
+    def test_register_and_introspect(self) -> None:
+        from logatory.parsers.base import BaseParser
+        from logatory.parsers.plugins import _PLUGIN_PARSERS, get_plugin_parser
+
+        class _Dummy(BaseParser):
+            def parse(self, line):  # pragma: no cover - never iterated here
+                return None
+
+        r = PluginRegistry()
+        try:
+            r.add_parser("dummyfmt", lambda lines: False, _Dummy)
+            assert len(r.parsers) == 1
+            assert r.parsers[0].name == "dummyfmt"
+            assert get_plugin_parser("dummyfmt") is not None
+        finally:
+            _PLUGIN_PARSERS.pop("dummyfmt", None)
+
+    def test_detected_and_built(self) -> None:
+        from logatory.models import Event, Severity
+        from logatory.parsers.base import BaseParser
+        from logatory.parsers.detector import FormatDetector
+        from logatory.parsers.plugins import _PLUGIN_PARSERS
+        from logatory.parsers.registry import get_parser
+
+        class _PipeParser(BaseParser):
+            def parse(self, line):
+                if not line.strip():
+                    return None
+                return Event(raw=line, source=self.source, message=line, severity=Severity.INFO)
+
+        def _detect(lines: list[str]) -> bool:
+            return all(line.startswith("PIPE|") for line in lines)
+
+        r = PluginRegistry()
+        try:
+            r.add_parser("pipefmt", _detect, _PipeParser)
+
+            fmt = FormatDetector().detect(["PIPE|a", "PIPE|b"])
+            assert fmt == "pipefmt"
+
+            parser = get_parser(fmt, "src")
+            assert isinstance(parser, _PipeParser)
+            assert parser.parse("PIPE|hello").message == "PIPE|hello"
+        finally:
+            _PLUGIN_PARSERS.pop("pipefmt", None)
+
+    def test_builtin_detection_takes_precedence(self) -> None:
+        from logatory.parsers.base import BaseParser
+        from logatory.parsers.detector import FormatDetector, LogFormat
+        from logatory.parsers.plugins import _PLUGIN_PARSERS
+
+        class _Greedy(BaseParser):
+            def parse(self, line):  # pragma: no cover - never iterated here
+                return None
+
+        r = PluginRegistry()
+        try:
+            # A greedy plugin that would accept anything must NOT shadow the
+            # built-in JSON detection, which runs first.
+            r.add_parser("greedy", lambda lines: True, _Greedy)
+            fmt = FormatDetector().detect(['{"message": "hi"}'])
+            assert fmt == LogFormat.JSON_LINES
+        finally:
+            _PLUGIN_PARSERS.pop("greedy", None)
+
+
+# ---------------------------------------------------------------------------
+# add_adapter() — global adapter registry integration
+# ---------------------------------------------------------------------------
+
+
+class TestAddAdapter:
+    def test_register_and_lookup(self) -> None:
+        from logatory.adapters import _REGISTRY, fleet_target_types, get_adapter_class
+        from logatory.adapters.base import SourceAdapter
+
+        class _CustomAdapter(SourceAdapter):
+            async def events(self):  # pragma: no cover - never iterated here
+                return
+                yield
+
+        r = PluginRegistry()
+        try:
+            r.add_adapter("plugin-src", _CustomAdapter)
+            assert get_adapter_class("plugin-src") is _CustomAdapter
+            assert len(r.adapters) == 1
+            assert r.adapters[0].name == "plugin-src"
+            # Not a fleet target by default.
+            assert "plugin-src" not in fleet_target_types()
+        finally:
+            _REGISTRY.pop("plugin-src", None)
+
+    def test_fleet_target_opt_in(self) -> None:
+        from logatory.adapters import _REGISTRY, fleet_target_types
+        from logatory.adapters.base import SourceAdapter
+
+        class _CustomAdapter(SourceAdapter):
+            async def events(self):  # pragma: no cover - never iterated here
+                return
+                yield
+
+        r = PluginRegistry()
+        try:
+            r.add_adapter("fleet-src", _CustomAdapter, fleet_target=True)
+            assert "fleet-src" in fleet_target_types()
+        finally:
+            _REGISTRY.pop("fleet-src", None)
+
+    def test_loaded_from_plugin_file(self, tmp_path: Path) -> None:
+        from logatory.adapters import _REGISTRY, get_adapter_class
+
+        plugin = tmp_path / "adapter_plugin.py"
+        plugin.write_text(
+            "from logatory.adapters.base import SourceAdapter\n"
+            "\n"
+            "class MyAdapter(SourceAdapter):\n"
+            "    async def events(self):\n"
+            "        return\n"
+            "        yield\n"
+            "\n"
+            "def register(registry):\n"
+            "    registry.add_adapter('from-file', MyAdapter)\n"
+        )
+        try:
+            registry = load_plugins(tmp_path)
+            assert len(registry.adapters) == 1
+            assert get_adapter_class("from-file") is not None
+        finally:
+            _REGISTRY.pop("from-file", None)

@@ -4,10 +4,11 @@ from .json_lines import JsonLinesParser
 from .logfmt import LogfmtParser
 from .nginx import NginxCombinedParser
 from .plaintext import PlaintextParser
+from .plugins import get_plugin_parser
 from .syslog import AuthLogParser, SyslogParser
 
 
-def get_parser(fmt: LogFormat, source: str) -> BaseParser:
+def get_parser(fmt: LogFormat | str, source: str) -> BaseParser:
     match fmt:
         case LogFormat.JSON_LINES:
             return JsonLinesParser(source)
@@ -20,4 +21,11 @@ def get_parser(fmt: LogFormat, source: str) -> BaseParser:
         case LogFormat.LOGFMT:
             return LogfmtParser(source)
         case _:
+            # A plugin-registered parser is identified by its name string
+            # (what FormatDetector.detect returns for it). Fall back to
+            # plaintext when nothing matches.
+            name = fmt.value if isinstance(fmt, LogFormat) else str(fmt)
+            plugin = get_plugin_parser(name)
+            if plugin is not None:
+                return plugin.factory(source)
             return PlaintextParser(source)
