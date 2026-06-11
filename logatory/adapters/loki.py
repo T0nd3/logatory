@@ -11,17 +11,15 @@ stream labels are used to enrich the parsed event.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import urllib.parse
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from ..models import Event
 from ..parsers.detector import FormatDetector
 from ..parsers.registry import get_parser
 from ._http import basic_auth_header, http_get
-from .base import SourceAdapter
+from ._polling import HttpPollingAdapter
 
 _QUERY_RANGE = "/loki/api/v1/query_range"
 _NS_PER_SECOND = 1_000_000_000
@@ -34,7 +32,7 @@ def _ns_to_datetime(ns: int) -> datetime | None:
         return None
 
 
-class LokiAdapter(SourceAdapter):
+class LokiAdapter(HttpPollingAdapter):
     """Reads log events from a Grafana Loki instance via its HTTP query API."""
 
     def __init__(
@@ -63,6 +61,7 @@ class LokiAdapter(SourceAdapter):
         self._org_id = org_id
         self._timeout = timeout
         self._fetcher = fetcher  # injectable for tests: (url, headers) -> str
+        self._parser = None  # built lazily from the first batch's sample
 
     # -- request construction ----------------------------------------------
 
@@ -135,50 +134,33 @@ class LokiAdapter(SourceAdapter):
             event.parsed_fields.setdefault(key, value)
         return event
 
-    # -- public API --------------------------------------------------------
+    # -- polling hooks -----------------------------------------------------
+    #
+    # Loki's `start` is inclusive, so entries on the boundary are skipped by a
+    # (timestamp, line) key kept from the previous batch — no duplicates, no
+    # gaps. The cursor is the newest nanosecond timestamp seen so far.
 
-    async def events(self) -> AsyncIterator[Event]:
-        """Yield events matching the LogQL query once (batch mode)."""
-        entries = self._entries(self._fetch(self._default_start_ns()))
-        if not entries:
-            return
-        sample = [line for _, line, _ in entries[:5] if line.strip()]
-        parser = get_parser(FormatDetector().detect(sample), source="loki")
-        for ns, line, labels in entries:
-            event = self._to_event(parser, ns, line, labels)
-            if event is not None:
-                yield event
+    def _initial_cursor(self) -> int:
+        return self._default_start_ns()
 
-    async def poll(self, interval: float) -> AsyncIterator[Event]:
-        """Poll Loki forever, yielding only newly-arrived entries.
+    def _fetch_batch(self, cursor: int) -> list[tuple[int, str, dict]]:
+        return self._entries(self._fetch(cursor))
 
-        Each round queries from the newest nanosecond timestamp seen so far.
-        Loki's `start` is inclusive, so entries on the boundary are skipped
-        by a (timestamp, line) key kept from the previous batch — no
-        duplicates, no gaps. Runs until the caller stops iterating.
-        """
-        cursor = self._default_start_ns()
-        seen: set[tuple[int, str]] = set()
-        parser = None
+    def _prepare_batch(self, items: list[tuple[int, str, dict]]) -> None:
+        if self._parser is None:
+            sample = [line for _, line, _ in items[:5] if line.strip()]
+            self._parser = get_parser(FormatDetector().detect(sample), source="loki")
 
-        while True:
-            entries = self._entries(self._fetch(cursor))
-            if entries and parser is None:
-                sample = [line for _, line, _ in entries[:5] if line.strip()]
-                parser = get_parser(FormatDetector().detect(sample), source="loki")
+    def _make_event(self, item: tuple[int, str, dict]) -> Event | None:
+        ns, line, labels = item
+        return self._to_event(self._parser, ns, line, labels)
 
-            batch_keys: set[tuple[int, str]] = set()
-            for ns, line, labels in entries:
-                key = (ns, line)
-                batch_keys.add(key)
-                if key in seen:
-                    continue
-                event = self._to_event(parser, ns, line, labels)
-                if event is not None:
-                    yield event
-                if ns >= cursor:
-                    cursor = ns
-            if batch_keys:
-                seen = batch_keys
+    def _dedup_key(self, item: tuple[int, str, dict]) -> tuple[int, str]:
+        ns, line, _labels = item
+        return (ns, line)
 
-            await asyncio.sleep(interval)
+    def _advance_cursor(
+        self, cursor: int, item: tuple[int, str, dict], event: Event | None
+    ) -> int:
+        ns = item[0]
+        return ns if ns >= cursor else cursor

@@ -10,15 +10,13 @@ each message is mapped to an Event directly — no format detection needed.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import urllib.parse
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 from ..models import Event, Severity
 from ._http import basic_auth_header, http_get
-from .base import SourceAdapter
+from ._polling import HttpPollingAdapter
 
 _RELATIVE = "/api/search/universal/relative"
 _ABSOLUTE = "/api/search/universal/absolute"
@@ -85,7 +83,7 @@ def _map_message(msg: dict) -> Event | None:
     )
 
 
-class GraylogAdapter(SourceAdapter):
+class GraylogAdapter(HttpPollingAdapter):
     """Reads log events from a Graylog server via its universal search API."""
 
     def __init__(
@@ -165,45 +163,27 @@ class GraylogAdapter(SourceAdapter):
                 out.append(msg)
         return out
 
-    # -- public API --------------------------------------------------------
+    # -- polling hooks -----------------------------------------------------
+    #
+    # The first round uses a relative search; later rounds use an absolute
+    # search from the newest timestamp seen. Messages on the boundary are
+    # skipped by `_id`, so none is delivered twice.
 
-    async def events(self) -> AsyncIterator[Event]:
-        """Yield events matching the query once (batch mode)."""
-        for msg in self._messages(self._fetch(self._relative_url())):
-            event = _map_message(msg)
-            if event is not None:
-                yield event
+    def _fetch_batch(self, cursor: datetime | None) -> list[dict]:
+        url = self._relative_url() if cursor is None else self._absolute_url(cursor)
+        return self._messages(self._fetch(url))
 
-    async def poll(self, interval: float) -> AsyncIterator[Event]:
-        """Poll Graylog forever, yielding only newly-arrived messages.
+    def _make_event(self, msg: dict) -> Event | None:
+        return _map_message(msg)
 
-        The first round uses a relative search; later rounds use an absolute
-        search from the newest timestamp seen. Messages on the boundary are
-        skipped by `_id`, so none is delivered twice. Runs until the caller
-        stops iterating.
-        """
-        cursor: datetime | None = None
-        seen: set[str] = set()
+    def _dedup_key(self, msg: dict) -> str | None:
+        return str(msg.get("_id") or "") or None
 
-        while True:
-            url = self._relative_url() if cursor is None else self._absolute_url(cursor)
-            messages = self._messages(self._fetch(url))
-
-            batch_ids: set[str] = set()
-            for msg in messages:
-                msg_id = str(msg.get("_id") or "")
-                if msg_id:
-                    batch_ids.add(msg_id)
-                    if msg_id in seen:
-                        continue
-                event = _map_message(msg)
-                if event is None:
-                    continue
-                yield event
-                if event.timestamp is not None and (cursor is None or event.timestamp > cursor):
-                    cursor = event.timestamp
-
-            if batch_ids:
-                seen = batch_ids
-
-            await asyncio.sleep(interval)
+    def _advance_cursor(
+        self, cursor: datetime | None, msg: dict, event: Event | None
+    ) -> datetime | None:
+        if event is None or event.timestamp is None:
+            return cursor
+        if cursor is None or event.timestamp > cursor:
+            return event.timestamp
+        return cursor
