@@ -16,6 +16,7 @@ from ..adapters.docker import DockerAdapter
 from ..adapters.file import FileAdapter
 from ..adapters.graylog import GraylogAdapter
 from ..adapters.journald import JournaldAdapter
+from ..adapters.kubernetes import KubernetesAdapter
 from ..adapters.loki import LokiAdapter
 from ..adapters.opensearch import OpenSearchAdapter
 from ..adapters.opensearch_config import (
@@ -66,6 +67,21 @@ def _build_docker(target: Target) -> SourceAdapter:
         label=p.get("label"),
         include_stopped=bool(p.get("include_stopped", False)),
         tail=_opt_int(p, "tail") or 200,
+    )
+
+
+def _build_kubernetes(target: Target) -> SourceAdapter:
+    p = target.params
+    return KubernetesAdapter(
+        namespace=p.get("namespace"),
+        selector=p.get("selector"),
+        pod=p.get("pod"),
+        container=p.get("container"),
+        all_namespaces=bool(p.get("all_namespaces", False)),
+        tail=_opt_int(p, "tail") or 200,
+        since=p.get("since"),
+        context=p.get("context"),
+        kubeconfig=p.get("kubeconfig"),
     )
 
 
@@ -142,6 +158,7 @@ _BUILDERS: dict[str, Callable[[Target], SourceAdapter]] = {
     "file": _build_file,
     "journald": _build_journald,
     "docker": _build_docker,
+    "kubernetes": _build_kubernetes,
     "ssh": _build_ssh,
     "loki": _build_loki,
     "graylog": _build_graylog,

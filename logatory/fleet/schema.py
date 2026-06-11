@@ -42,6 +42,13 @@ TYPE_FIELDS: dict[str, list[Field]] = {
         Field("label", "Container label filter, key=value (optional)"),
         Field("include_stopped", "Include stopped containers?", kind="bool"),
     ],
+    "kubernetes": [
+        Field("namespace", "Namespace (optional)"),
+        Field("selector", "Label selector, e.g. app=api (optional)"),
+        Field("pod", "Single pod name (optional)"),
+        Field("container", "Container name (optional)"),
+        Field("context", "kubeconfig context (optional)"),
+    ],
     "ssh": [
         Field("host", "SSH host — user@host or an ssh-config alias", required=True),
         Field("journald", "Read the remote systemd journal (instead of a file)?", kind="bool"),

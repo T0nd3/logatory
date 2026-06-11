@@ -22,6 +22,7 @@ from .docker import DockerAdapter
 from .file import FileAdapter
 from .graylog import GraylogAdapter
 from .journald import JournaldAdapter
+from .kubernetes import KubernetesAdapter
 from .loki import LokiAdapter
 from .opensearch import OpenSearchAdapter
 from .ssh import SSHAdapter
@@ -78,6 +79,7 @@ for _spec in (
     AdapterSpec("file", FileAdapter),
     AdapterSpec("journald", JournaldAdapter),
     AdapterSpec("docker", DockerAdapter),
+    AdapterSpec("kubernetes", KubernetesAdapter),
     AdapterSpec("ssh", SSHAdapter),
     AdapterSpec("loki", LokiAdapter),
     AdapterSpec("graylog", GraylogAdapter),

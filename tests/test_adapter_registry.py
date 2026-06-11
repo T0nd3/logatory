@@ -19,6 +19,7 @@ class TestBuiltinRegistry:
             "tail",
             "journald",
             "docker",
+            "kubernetes",
             "ssh",
             "loki",
             "graylog",

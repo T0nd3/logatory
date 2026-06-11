@@ -48,6 +48,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 - [CLI Reference](#cli-reference)
   - [scan](#scan)
   - [Docker container logs](#docker-container-logs)
+  - [Kubernetes pods](#kubernetes-pods)
   - [systemd journal](#systemd-journal-journald)
   - [Remote servers (SSH)](#remote-servers-ssh)
   - [tail](#tail)
@@ -92,6 +93,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | **OpenSearch** | Query and analyse logs from OpenSearch / Elasticsearch clusters |
 | **systemd journal** | Read logs straight from journald via `journalctl` — scan history or follow live |
 | **Docker logs** | Read container logs straight from the Docker daemon — scan or follow, no log stack required |
+| **Kubernetes** | Read pod logs through `kubectl` — by namespace, label selector or pod; scan or follow, no log stack required |
 | **Remote over SSH** | Pull logs from any SSH-reachable host — no agent on the remote box; scan or follow live with auto-reconnect |
 | **Grafana Loki** | Query a Loki instance with LogQL — scan or follow live |
 | **Graylog** | Query a Graylog server via its search API — scan or follow live |
@@ -241,6 +243,40 @@ logatory docker tail --name my-service --alert-webhook https://hooks.example/log
 Each event is auto-detected per container (JSON, Nginx, plaintext, …),
 PII-redacted, and tagged with its container name. `docker tail` polls the
 daemon, so containers started after it launches are picked up automatically.
+
+---
+
+### Kubernetes pods
+
+No log aggregation stack required — Logatory reads pod logs straight through
+`kubectl`. It shells out to the system client (no Python Kubernetes
+dependency), so your current kube-context, `~/.kube/config`, auth plugins and
+RBAC all apply unchanged. It only ever runs `get pods` and `logs` — read-only:
+
+```bash
+# Scan all pods in the current namespace
+logatory kubernetes scan
+
+# A workload by label selector; persist errors
+logatory kubernetes scan --selector app=api --track-errors
+
+# One namespace, one container; across all namespaces
+logatory kubernetes scan --namespace prod --container app
+logatory kubernetes scan --all-namespaces
+
+# A single pod, a specific context and a lookback window
+logatory kubernetes scan --pod api-7d9f --context staging --since 1h
+
+# Follow pods in real time (Ctrl+C to stop)
+logatory kubernetes tail --selector app=api
+logatory kubernetes tail -n prod --alert-webhook https://hooks.example/logs
+```
+
+Each pod's containers are read individually, auto-detected (JSON, logfmt,
+plaintext, …), PII-redacted, and tagged with their namespace, pod and
+container. `kubernetes tail` re-lists pods every poll, so pods scheduled
+after it launches are picked up automatically, and tracks each container by a
+timestamp cursor so already-seen lines are never re-emitted.
 
 ---
 
@@ -637,8 +673,8 @@ Authenticate with a Graylog access token (`GRAYLOG_TOKEN`) or with
 
 Most Logatory commands read one source. **Fleet** lets you declare many
 sources in a `targets.yaml` and scan, follow, or manage them all at once —
-each target can be any supported type (file, journald, docker, ssh,
-opensearch, loki, graylog).
+each target can be any supported type (file, journald, docker, kubernetes,
+ssh, opensearch, loki, graylog).
 
 Build the file interactively — the wizard prompts for each target's fields
 and keeps secrets out of the file as `${ENV_VAR}` references:

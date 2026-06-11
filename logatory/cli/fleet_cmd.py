@@ -668,6 +668,9 @@ def _probe(target: Target, timeout: float) -> tuple[bool, str]:
 
             _require_docker().from_env().ping()
             return True, ""
+        if target.type == "kubernetes":
+            ok = shutil.which("kubectl") is not None
+            return ok, "" if ok else "kubectl not on PATH"
         if target.type in ("loki", "graylog", "opensearch"):
             return _http_reachable(_endpoint_url(target), timeout)
         return False, "unknown type"
