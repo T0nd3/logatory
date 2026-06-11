@@ -20,6 +20,7 @@ class TestBuiltinRegistry:
             "journald",
             "docker",
             "kubernetes",
+            "windows",
             "ssh",
             "loki",
             "graylog",

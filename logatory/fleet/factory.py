@@ -26,6 +26,7 @@ from ..adapters.opensearch_config import (
     TimeRange,
 )
 from ..adapters.ssh import SSHAdapter
+from ..adapters.windows import WindowsEventLogAdapter
 from .targets import Target, TargetConfigError
 
 
@@ -82,6 +83,16 @@ def _build_kubernetes(target: Target) -> SourceAdapter:
         since=p.get("since"),
         context=p.get("context"),
         kubeconfig=p.get("kubeconfig"),
+    )
+
+
+def _build_windows(target: Target) -> SourceAdapter:
+    p = target.params
+    return WindowsEventLogAdapter(
+        path=p.get("path"),
+        log=p.get("log"),
+        max_events=_opt_int(p, "max_events") or 200,
+        provider=p.get("provider"),
     )
 
 
@@ -159,6 +170,7 @@ _BUILDERS: dict[str, Callable[[Target], SourceAdapter]] = {
     "journald": _build_journald,
     "docker": _build_docker,
     "kubernetes": _build_kubernetes,
+    "windows": _build_windows,
     "ssh": _build_ssh,
     "loki": _build_loki,
     "graylog": _build_graylog,

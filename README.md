@@ -49,6 +49,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
   - [scan](#scan)
   - [Docker container logs](#docker-container-logs)
   - [Kubernetes pods](#kubernetes-pods)
+  - [Windows Event Log](#windows-event-log)
   - [systemd journal](#systemd-journal-journald)
   - [Remote servers (SSH)](#remote-servers-ssh)
   - [tail](#tail)
@@ -94,6 +95,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | **systemd journal** | Read logs straight from journald via `journalctl` — scan history or follow live |
 | **Docker logs** | Read container logs straight from the Docker daemon — scan or follow, no log stack required |
 | **Kubernetes** | Read pod logs through `kubectl` — by namespace, label selector or pod; scan or follow, no log stack required |
+| **Windows Event Log** | Analyze a JSON event export anywhere (even on Linux), or read a live log on Windows via `Get-WinEvent` |
 | **Remote over SSH** | Pull logs from any SSH-reachable host — no agent on the remote box; scan or follow live with auto-reconnect |
 | **Grafana Loki** | Query a Loki instance with LogQL — scan or follow live |
 | **Graylog** | Query a Graylog server via its search API — scan or follow live |
@@ -277,6 +279,47 @@ plaintext, …), PII-redacted, and tagged with their namespace, pod and
 container. `kubernetes tail` re-lists pods every poll, so pods scheduled
 after it launches are picked up automatically, and tracks each container by a
 timestamp cursor so already-seen lines are never re-emitted.
+
+---
+
+### Windows Event Log
+
+Windows event logs are most portably consumed as JSON. Export them on the
+Windows host with PowerShell:
+
+```powershell
+Get-WinEvent -LogName System -MaxEvents 500 |
+    Select-Object TimeCreated,Id,LevelDisplayName,Level,ProviderName,LogName,Message,MachineName,RecordId,Task |
+    ConvertTo-Json -Depth 3 > system.json
+```
+
+…then analyse the file **anywhere — even on Linux**:
+
+```bash
+# Scan an exported JSON file
+logatory windows scan --path system.json
+
+# Persist errors found in the export
+logatory windows scan --path security.json --track-errors
+```
+
+On a Windows host the adapter can also read a log live by shelling out to
+`Get-WinEvent` itself — no export step:
+
+```bash
+# Scan a live log (Windows only)
+logatory windows scan --log System
+logatory windows scan --log Security --provider Microsoft-Windows-Security-Auditing
+
+# Follow a live log in real time (Ctrl+C to stop)
+logatory windows tail --log System
+logatory windows tail --log Security --alert-webhook https://hooks.example/logs
+```
+
+Each record's Windows level becomes a severity (Critical/Error/Warning/…),
+`TimeCreated` the timestamp, and the event ID, provider, log name and machine
+are kept in the event's fields. `windows tail` de-duplicates by RecordId, so
+each event is delivered exactly once across polls.
 
 ---
 
@@ -674,7 +717,7 @@ Authenticate with a Graylog access token (`GRAYLOG_TOKEN`) or with
 Most Logatory commands read one source. **Fleet** lets you declare many
 sources in a `targets.yaml` and scan, follow, or manage them all at once —
 each target can be any supported type (file, journald, docker, kubernetes,
-ssh, opensearch, loki, graylog).
+windows, ssh, opensearch, loki, graylog).
 
 Build the file interactively — the wizard prompts for each target's fields
 and keeps secrets out of the file as `${ENV_VAR}` references:

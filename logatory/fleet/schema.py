@@ -49,6 +49,11 @@ TYPE_FIELDS: dict[str, list[Field]] = {
         Field("container", "Container name (optional)"),
         Field("context", "kubeconfig context (optional)"),
     ],
+    "windows": [
+        Field("path", "Path to a JSON event export (omit if reading a live log)"),
+        Field("log", "Windows log name for live mode, e.g. System (optional)"),
+        Field("provider", "Provider name filter, live mode (optional)"),
+    ],
     "ssh": [
         Field("host", "SSH host — user@host or an ssh-config alias", required=True),
         Field("journald", "Read the remote systemd journal (instead of a file)?", kind="bool"),

@@ -28,6 +28,7 @@ from .opensearch import OpenSearchAdapter
 from .ssh import SSHAdapter
 from .stdin import StdinAdapter
 from .tail import TailAdapter
+from .windows import WindowsEventLogAdapter
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,7 @@ for _spec in (
     AdapterSpec("journald", JournaldAdapter),
     AdapterSpec("docker", DockerAdapter),
     AdapterSpec("kubernetes", KubernetesAdapter),
+    AdapterSpec("windows", WindowsEventLogAdapter),
     AdapterSpec("ssh", SSHAdapter),
     AdapterSpec("loki", LokiAdapter),
     AdapterSpec("graylog", GraylogAdapter),
