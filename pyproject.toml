@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "logatory"
-version = "0.5.1"
+version = "0.6.0"
 description = "Local log analysis with PII redaction, threat detection, anomaly detection and LLM-powered insights"
 readme = "README.md"
 requires-python = ">=3.11"
