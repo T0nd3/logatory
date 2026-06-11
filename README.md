@@ -51,6 +51,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
   - [Kubernetes pods](#kubernetes-pods)
   - [Windows Event Log](#windows-event-log)
   - [S3 / object storage](#s3--object-storage)
+  - [Syslog listener](#syslog-listener)
   - [systemd journal](#systemd-journal-journald)
   - [Remote servers (SSH)](#remote-servers-ssh)
   - [tail](#tail)
@@ -98,6 +99,7 @@ The IP addresses above (`ip_8390373f`, …) are deterministic pseudonyms — the
 | **Kubernetes** | Read pod logs through `kubectl` — by namespace, label selector or pod; scan or follow, no log stack required |
 | **Windows Event Log** | Analyze a JSON event export anywhere (even on Linux), or read a live log on Windows via `Get-WinEvent` |
 | **S3 / object storage** | Read log objects straight from a bucket via the `aws` CLI — AWS S3 or any S3-compatible store; gzip decompressed on the fly |
+| **Syslog listener** | Bind UDP/TCP 514 and receive syslog (RFC 3164 / RFC 5424) from network devices, firewalls and appliances |
 | **Remote over SSH** | Pull logs from any SSH-reachable host — no agent on the remote box; scan or follow live with auto-reconnect |
 | **Grafana Loki** | Query a Loki instance with LogQL — scan or follow live |
 | **Graylog** | Query a Graylog server via its search API — scan or follow live |
@@ -356,6 +358,37 @@ Each object's body is streamed and parsed exactly like any other source
 (JSON, logfmt, plaintext, …); gzip-compressed objects (`*.gz`) are
 decompressed transparently. Every event is tagged with its bucket and key.
 Because S3 objects are immutable, `s3 tail` reads each new key exactly once.
+
+---
+
+### Syslog listener
+
+Network devices, firewalls, routers and appliances rarely write a log file
+you can read — they *emit* syslog over the wire. This source binds a UDP
+and/or TCP port and turns every incoming message into an event, so a box
+that only speaks syslog becomes just another source. Both the old BSD format
+(RFC 3164) and the modern one (RFC 5424) are understood; the PRI value yields
+the facility and a severity, and the hostname, app/tag and timestamp are
+parsed out.
+
+```bash
+# Follow a live UDP listener on the standard port (Ctrl+C to stop)
+logatory syslog listen --port 514
+
+# Also accept TCP, and alert on high-severity findings
+logatory syslog listen --port 514 --protocol both \
+    --alert-webhook https://hooks.example/logs
+
+# Collect a bounded batch (e.g. for a quick look), then summarize
+logatory syslog scan --port 5514 --max-messages 200
+```
+
+> Binding port 514 needs root. Use a high port (e.g. `--port 5514`) for
+> unprivileged runs and point your senders at it.
+
+TCP framing follows RFC 6587 — both octet-counting (`<len> <msg>`) and
+newline-delimited messages are handled. Like `stdin` and `tail`, the syslog
+listener is a local, stream-only source, so it isn't a fleet target.
 
 ---
 

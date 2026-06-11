@@ -22,6 +22,7 @@ class TestBuiltinRegistry:
             "kubernetes",
             "windows",
             "s3",
+            "syslog",
             "ssh",
             "loki",
             "graylog",

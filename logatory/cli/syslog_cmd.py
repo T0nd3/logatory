@@ -1,0 +1,224 @@
+"""CLI command group: logatory syslog — receive syslog over UDP/TCP."""
+
+from __future__ import annotations
+
+import asyncio
+from pathlib import Path
+from typing import Annotated, Optional
+
+import typer
+
+from logatory.adapters.syslog_listener import SyslogListenerAdapter
+from logatory.cli._pipeline import run_tail_pipeline
+from logatory.cli._types import REDACT_MAP, RedactModeArg
+from logatory.cli.colors import SEVERITY_COLOR
+from logatory.config import Config
+from logatory.errors.tracker import ErrorTracker
+from logatory.models import Event, Finding
+from logatory.pii.redactor import PIIRedactor
+from logatory.plugins.loader import compile_plugin_pii_patterns, load_plugins
+from logatory.rules.loader import build_engine
+from logatory.storage.errors_repo import ErrorsRepository
+
+app = typer.Typer(help="Receive syslog over UDP/TCP (RFC 3164 / RFC 5424) and analyze it.")
+
+
+def _print_finding(finding: Finding) -> None:
+    color = SEVERITY_COLOR.get(finding.severity.value, typer.colors.WHITE)
+    ts = finding.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+    line = f"  [{finding.severity.value.upper()}] {ts}  {finding.rule_id}  {finding.message}"
+    typer.echo(typer.style(line, fg=color))
+
+
+@app.command("scan")
+def syslog_scan(
+    host: Annotated[str, typer.Option("--host", "-H", help="Address to bind.")] = "0.0.0.0",
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to bind.")] = 514,
+    protocol: Annotated[
+        str, typer.Option("--protocol", help="Transport: udp, tcp or both.")
+    ] = "udp",
+    max_messages: Annotated[
+        int, typer.Option("--max-messages", help="Stop after this many messages.")
+    ] = 100,
+    config: Annotated[Optional[Path], typer.Option("--config")] = None,
+    redact: Annotated[RedactModeArg, typer.Option("--redact")] = RedactModeArg.redact,
+    limit: Annotated[int, typer.Option("--limit", help="Max events to display.")] = 50,
+    show_all: Annotated[bool, typer.Option("--show-all", help="Display every event.")] = False,
+    no_rules: Annotated[bool, typer.Option("--no-rules", help="Skip the rule engine.")] = False,
+    rules_dir: Annotated[Optional[Path], typer.Option("--rules-dir")] = None,
+    track_errors: Annotated[
+        bool, typer.Option("--track-errors", help="Persist errors to SQLite.")
+    ] = False,
+) -> None:
+    """Collect a bounded batch of syslog messages, redact PII, run rules.
+
+    Binds the port, waits for up to --max-messages messages, then summarizes.
+    Use `syslog listen` to follow indefinitely.
+    """
+    cfg = Config.load(config)
+
+    plugin_registry = load_plugins(cfg.plugins_dir)
+    plugin_pii = compile_plugin_pii_patterns(plugin_registry)
+    redactor = PIIRedactor.from_config(
+        salt=cfg.pii_salt,
+        rules_path=cfg.pii_rules_path,
+        mode=REDACT_MAP[redact],
+        additional=plugin_pii or None,
+    )
+
+    engine = build_engine(no_rules, rules_dir, plugin_registry)
+
+    events: list[Event] = []
+    findings: list[Finding] = []
+    pii_hits = 0
+
+    typer.echo(
+        f"Listening on {protocol}://{host}:{port} for up to {max_messages} messages "
+        "(Ctrl+C to stop early)…"
+    )
+
+    async def _run() -> None:
+        nonlocal pii_hits
+        adapter = SyslogListenerAdapter(
+            host=host, port=port, protocol=protocol, max_messages=max_messages
+        )
+        async for event in adapter.events():
+            result = redactor.redact(event.message)
+            event.message = result.text
+            event.raw = redactor.redact(event.raw).text
+            pii_hits += len(result.hits)
+            events.append(event)
+            if engine:
+                findings.extend(engine.process(event))
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        typer.echo(f"Error receiving syslog: {e}", err=True)
+        raise typer.Exit(1)
+
+    hosts = sorted({e.source for e in events})
+    sep = "-" * 60
+    typer.echo(
+        f"\n{sep}\n"
+        f"  Source     : Syslog ({protocol}://{host}:{port})\n"
+        f"  Hosts      : {len(hosts):,}\n"
+        f"  Events     : {len(events):,}\n"
+        f"  PII hits   : {pii_hits:,} (mode: {redact.value})\n"
+        f"  Findings   : {len(findings):,}\n"
+        f"{sep}"
+    )
+    if hosts:
+        typer.echo(f"  Senders    : {', '.join(hosts[:10])}")
+
+    sample = events if show_all else events[:limit]
+    if sample:
+        typer.echo(f"\n  Events ({len(sample)} of {len(events):,}):\n")
+        for i, ev in enumerate(sample, 1):
+            ts = ev.timestamp.strftime("%Y-%m-%d %H:%M:%S") if ev.timestamp else "no timestamp"
+            sev = ev.severity.value.upper().ljust(8)
+            typer.echo(f"  [{i:>5}] {ts}  {sev}  {ev.source}  {ev.message[:100]}")
+        if not show_all and len(events) > limit:
+            typer.echo(f"\n  ... {len(events) - limit:,} more. Use --show-all or --limit N.")
+
+    if findings:
+        typer.echo(f"\n  Findings ({len(findings)}):\n")
+        for finding in findings:
+            _print_finding(finding)
+    elif not no_rules:
+        typer.echo("\n  No findings.")
+
+    if track_errors and events:
+        with ErrorsRepository(cfg.db_path) as e_repo:
+            tracker = ErrorTracker(e_repo)
+            tracked = sum(1 for ev in events if tracker.process(ev) is not None)
+        typer.echo(f"\n  Errors tracked: {tracked:,} -> {cfg.db_path}")
+
+
+@app.command("listen")
+def syslog_listen(
+    host: Annotated[str, typer.Option("--host", "-H", help="Address to bind.")] = "0.0.0.0",
+    port: Annotated[int, typer.Option("--port", "-p", help="Port to bind.")] = 514,
+    protocol: Annotated[
+        str, typer.Option("--protocol", help="Transport: udp, tcp or both.")
+    ] = "udp",
+    config: Annotated[Optional[Path], typer.Option("--config")] = None,
+    redact: Annotated[RedactModeArg, typer.Option("--redact")] = RedactModeArg.redact,
+    no_rules: Annotated[bool, typer.Option("--no-rules", help="Skip the rule engine.")] = False,
+    rules_dir: Annotated[Optional[Path], typer.Option("--rules-dir")] = None,
+    track_errors: Annotated[
+        bool, typer.Option("--track-errors", help="Persist errors to SQLite.")
+    ] = False,
+    track_findings: Annotated[
+        bool, typer.Option("--track-findings", help="Persist HIGH/CRITICAL findings to SQLite.")
+    ] = False,
+    alert_webhook: Annotated[
+        Optional[str], typer.Option("--alert-webhook", help="POST findings as JSON to this URL.")
+    ] = None,
+    alert_min_severity: Annotated[
+        str, typer.Option("--alert-min-severity", help="Minimum severity to fire the webhook.")
+    ] = "high",
+) -> None:
+    """Receive syslog in real time — redact PII, run rules, alert.
+
+    Binds the UDP/TCP port and processes every incoming message until Ctrl+C.
+    """
+    cfg = Config.load(config)
+
+    plugin_registry = load_plugins(cfg.plugins_dir)
+    plugin_pii = compile_plugin_pii_patterns(plugin_registry)
+    redactor = PIIRedactor.from_config(
+        salt=cfg.pii_salt,
+        rules_path=cfg.pii_rules_path,
+        mode=REDACT_MAP[redact],
+        additional=plugin_pii or None,
+    )
+
+    engine = build_engine(no_rules, rules_dir, plugin_registry)
+
+    sep = "-" * 60
+    typer.echo(f"\n{sep}")
+    typer.echo(f"  Listening : syslog {protocol}://{host}:{port}")
+    typer.echo(f"  Rules     : {'off' if no_rules else 'on'}")
+    if alert_webhook:
+        typer.echo(f"  Webhook   : {alert_webhook}  (min: {alert_min_severity})")
+    typer.echo("  Press Ctrl+C to stop.")
+    typer.echo(f"{sep}\n")
+
+    counts = {"events": 0, "findings": 0, "pii": 0, "errors": 0, "webhooks": 0}
+
+    async def _run() -> None:
+        adapter = SyslogListenerAdapter(host=host, port=port, protocol=protocol)
+        await run_tail_pipeline(
+            event_stream=adapter.poll(),
+            redactor=redactor,
+            engine=engine,
+            counts=counts,
+            cfg=cfg,
+            print_finding=_print_finding,
+            track_errors=track_errors,
+            track_findings=track_findings,
+            alert_webhook=alert_webhook,
+            alert_min_severity=alert_min_severity,
+        )
+
+    try:
+        asyncio.run(_run())
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        typer.echo(f"\nError receiving syslog: {e}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"\n{sep}")
+    typer.echo("  Stopped.")
+    typer.echo(f"  Events   : {counts['events']:,}")
+    typer.echo(f"  PII hits : {counts['pii']:,}")
+    typer.echo(f"  Findings : {counts['findings']:,}")
+    if track_errors:
+        typer.echo(f"  Errors   : {counts['errors']:,} tracked")
+    if alert_webhook:
+        typer.echo(f"  Webhooks : {counts['webhooks']:,} sent")
+    typer.echo(sep)

@@ -28,6 +28,7 @@ from .opensearch import OpenSearchAdapter
 from .s3 import S3Adapter
 from .ssh import SSHAdapter
 from .stdin import StdinAdapter
+from .syslog_listener import SyslogListenerAdapter
 from .tail import TailAdapter
 from .windows import WindowsEventLogAdapter
 
@@ -90,6 +91,7 @@ for _spec in (
     AdapterSpec("opensearch", OpenSearchAdapter),
     AdapterSpec("stdin", StdinAdapter, fleet_target=False),
     AdapterSpec("tail", TailAdapter, fleet_target=False),
+    AdapterSpec("syslog", SyslogListenerAdapter, fleet_target=False),
 ):
     register_adapter(_spec)
 

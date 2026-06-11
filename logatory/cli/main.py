@@ -34,6 +34,7 @@ from logatory.cli.loki_cmd import app as loki_app
 from logatory.cli.opensearch_cmd import app as opensearch_app
 from logatory.cli.s3_cmd import app as s3_app
 from logatory.cli.ssh_cmd import app as ssh_app
+from logatory.cli.syslog_cmd import app as syslog_app
 from logatory.cli.windows_cmd import app as windows_app
 from logatory.config import Config
 from logatory.errors.tracker import ErrorTracker
@@ -62,6 +63,7 @@ app.add_typer(kubernetes_app, name="kubernetes")
 app.add_typer(windows_app, name="windows")
 app.add_typer(s3_app, name="s3")
 app.add_typer(ssh_app, name="ssh")
+app.add_typer(syslog_app, name="syslog")
 app.add_typer(loki_app, name="loki")
 app.add_typer(graylog_app, name="graylog")
 app.add_typer(fleet_app, name="fleet")
