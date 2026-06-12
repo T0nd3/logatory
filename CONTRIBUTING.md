@@ -22,8 +22,8 @@ embedding code paths.
 
 ## Running the checks
 
-CI runs three things on Linux, Windows and macOS (Python 3.11 and 3.12). Run
-them locally before opening a pull request:
+CI runs three things on Linux, Windows and macOS (Python 3.11, 3.12, 3.13 and
+3.14). Run them locally before opening a pull request:
 
 ```bash
 pytest                  # test suite
@@ -33,6 +33,20 @@ ruff format --check .   # formatting
 
 `ruff format .` (without `--check`) applies the formatting. All ruff
 configuration lives in `pyproject.toml`.
+
+### Known test warning
+
+`pytest` emits one upstream deprecation warning:
+
+```
+StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is
+deprecated; install `httpx2` instead.
+```
+
+It comes from Starlette's `TestClient` at import time, not from Logatory's own
+code, and is harmless. We do **not** depend on `httpx2` yet because it is not
+generally available across our supported Python versions; once Starlette and the
+ecosystem settle on it, we'll migrate. You can safely ignore this warning.
 
 ## Code style
 

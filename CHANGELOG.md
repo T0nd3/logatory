@@ -7,12 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- This changelog.
+- CI test matrix now covers Python 3.13 and 3.14 (in addition to 3.11 and 3.12)
+  on Linux, Windows and macOS; added the matching trove classifiers.
+- CONTRIBUTING note documenting the harmless upstream `httpx`/`httpx2`
+  Starlette `TestClient` deprecation warning.
+
 ### Fixed
 - Use the non-deprecated `HTTP_422_UNPROCESSABLE_CONTENT` status constant in the
   event-ingest endpoint (silences a FastAPI/Starlette deprecation warning).
-
-### Added
-- This changelog.
 
 ## [0.6.0] - 2026-06-12
 
