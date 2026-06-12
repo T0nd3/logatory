@@ -222,7 +222,7 @@ def v1_ingest(
         except ValueError:
             valid = ", ".join(f.value for f in LogFormat)
             raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                 detail=f"Unknown format '{payload.format}'. Valid values: {valid}.",
             )
     else:
