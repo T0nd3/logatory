@@ -280,3 +280,38 @@ class TestAddAdapter:
             assert get_adapter_class("from-file") is not None
         finally:
             _REGISTRY.pop("from-file", None)
+
+
+# ---------------------------------------------------------------------------
+# The shipped example plugin (plugins/example_plugin.py)
+# ---------------------------------------------------------------------------
+
+
+class TestExamplePlugin:
+    def test_example_plugin_registers_everything(self) -> None:
+        from logatory.adapters import _REGISTRY, get_adapter_class
+        from logatory.parsers.plugins import _PLUGIN_PARSERS, get_plugin_parser
+
+        plugins_dir = Path(__file__).parent.parent / "plugins"
+        try:
+            registry = load_plugins(plugins_dir)
+
+            # rule + PII pattern collected on the registry
+            assert any(r.id == "CUSTOM_EXAMPLE" for r in registry.rules)
+            assert any(p["name"] == "employee_id" for p in registry.pii_patterns)
+
+            # parser + adapter registered into the global registries
+            assert get_plugin_parser("appliance") is not None
+            assert get_adapter_class("demo-source") is not None
+
+            # the example parser actually parses an APP| line
+            parser = get_plugin_parser("appliance").factory("src")
+            ev = parser.parse("APP|2026-06-13T08:15:04Z|ERROR|auth|login failed for user")
+            assert ev is not None
+            assert ev.message == "login failed for user"
+            assert ev.severity.value == "error"
+            assert ev.parsed_fields["component"] == "auth"
+            assert parser.parse("not an app line") is None
+        finally:
+            _PLUGIN_PARSERS.pop("appliance", None)
+            _REGISTRY.pop("demo-source", None)

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Plugin docs & example:** a full plugin guide in `docs/PLUGINS.md` and an
+  expanded `plugins/example_plugin.py` that demonstrates all four contribution
+  types — a detection rule, a PII pattern, a custom log-format parser and a
+  source adapter.
 - **Parser:** Traefik access log in its *common* format (the extended common log
   with Traefik's trailing request-count / router / server / duration fields).
   Auto-detected ahead of nginx so it is not mistaken for a plain combined log;

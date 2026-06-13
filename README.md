@@ -1285,6 +1285,8 @@ def register(registry) -> None:
 
 Plugin rules participate in `logatory scan`, `logatory tail`, and the web dashboard rule engine. Plugin PII patterns apply to every redaction pass; plugin parsers and adapters register into the global parser/adapter registries, so format auto-detection and source lookup pick them up everywhere. A plugin that raises an exception is logged as a warning and skipped — it never crashes the host process.
 
+A complete, runnable example covering all four contribution types lives in [`plugins/example_plugin.py`](plugins/example_plugin.py), and the full guide is in [`docs/PLUGINS.md`](docs/PLUGINS.md).
+
 ---
 
 ## Anomaly Detection
