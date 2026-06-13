@@ -176,7 +176,7 @@ logatory --install-completion    # bash / zsh / fish / PowerShell
 
 ## CLI Reference
 
-All commands accept `--config/-c <path>` to specify a config file. Defaults to `config.yaml` in the working directory.
+All commands accept `--config/-c <path>` to specify a config file. Without it, Logatory auto-discovers one from (in order) `$LOGATORY_CONFIG`, `./config.yaml`, then `~/.config/logatory/config.yaml`; if none exist, built-in defaults are used.
 
 ---
 
@@ -1079,7 +1079,9 @@ logatory demo clear
 
 ## Configuration
 
-Copy `config.yaml.example` to `config.yaml` and adapt:
+Copy `config.yaml.example` to `config.yaml` and adapt. When no `--config` is
+passed, Logatory looks for a config in `$LOGATORY_CONFIG`, `./config.yaml`, then
+`~/.config/logatory/config.yaml`.
 
 ```yaml
 # SQLite database for findings, errors, and baselines

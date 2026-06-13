@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Config auto-discovery:** when no `--config` is given, Logatory now searches
+  `$LOGATORY_CONFIG`, `./config.yaml`, then `~/.config/logatory/config.yaml`
+  before falling back to built-in defaults — so you no longer have to pass
+  `--config` on every command.
 - **Performance benchmark:** `scripts/benchmark.py` measures end-to-end pipeline
   throughput (parse + PII-redact + rule engine) over synthetic log lines and
   reports lines/second — handy for catching performance regressions. The core

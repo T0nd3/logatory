@@ -132,8 +132,35 @@ class Config:
     # Alert channels — findings at/above each channel's min_severity are pushed
     alerts: list[AlertChannel] = field(default_factory=list)
 
+    @staticmethod
+    def default_config_paths() -> list[Path]:
+        """Standard locations searched when no ``--config`` is given, in order.
+
+        ``$LOGATORY_CONFIG`` (if set) wins, then ``./config.yaml`` in the current
+        directory, then the per-user ``~/.config/logatory/config.yaml``.
+        """
+        paths: list[Path] = []
+        env = os.environ.get("LOGATORY_CONFIG")
+        if env:
+            paths.append(Path(env))
+        paths.append(Path("config.yaml"))
+        paths.append(Path.home() / ".config" / "logatory" / "config.yaml")
+        return paths
+
+    @classmethod
+    def find_config_path(cls) -> Path | None:
+        """Return the first existing default config path, or None."""
+        for p in cls.default_config_paths():
+            if p.exists():
+                return p
+        return None
+
     @classmethod
     def load(cls, path: Path | None = None) -> Config:
+        # No explicit path → auto-discover from the standard locations.
+        if path is None:
+            path = cls.find_config_path()
+
         data: dict = {}
         if path and path.exists():
             with open(path) as f:
