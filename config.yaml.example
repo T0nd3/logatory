@@ -15,6 +15,28 @@ api_token: ""
 # findings_retention_days: 30
 # findings_min_severity: high
 
+# Alert channels — findings at/above each channel's min_severity are pushed.
+# Applies to every realtime command (tail, docker tail, fleet tail, …).
+# Types: slack | discord | webhook | email.  ${ENV_VAR} is expanded, so keep
+# secrets in the environment. Verify with: logatory alerts test
+# alerts:
+#   - type: slack
+#     url: ${SLACK_WEBHOOK_URL}
+#     min_severity: high
+#   - type: webhook
+#     url: https://hooks.example.com/security
+#     min_severity: medium
+#   - type: email
+#     min_severity: critical
+#     smtp_host: smtp.example.com
+#     smtp_port: 587
+#     smtp_user: alerts@example.com
+#     smtp_password: ${SMTP_PASSWORD}
+#     use_tls: true
+#     sender: alerts@example.com
+#     recipients:
+#       - oncall@example.com
+
 llm:
   provider: ollama
   model: gemma3:4b

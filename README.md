@@ -540,6 +540,58 @@ logatory tail /var/log/auth.log --from-start --no-rules
 
 ---
 
+### Alert channels
+
+`--alert-webhook` posts a generic JSON payload to one URL. For richer, persistent
+alerting, configure named channels under `alerts:` in `config.yaml`. They apply to
+**every** realtime command (`tail`, `docker tail`, `fleet tail`, the cloud
+adapters, …) automatically — no per-command flags needed. Each channel has its own
+`min_severity`, so you can route only `critical` findings to e-mail while Slack
+gets everything `high` and above.
+
+Supported channel `type`s: **`slack`**, **`discord`**, **`webhook`** (generic
+JSON), **`email`** (SMTP).
+
+```yaml
+alerts:
+  - type: slack
+    url: ${SLACK_WEBHOOK_URL}      # ${ENV_VAR} is expanded — keep secrets out of the file
+    min_severity: high
+
+  - type: discord
+    url: ${DISCORD_WEBHOOK_URL}
+    min_severity: high
+
+  - type: webhook
+    url: https://hooks.example.com/security
+    min_severity: medium
+
+  - type: email
+    min_severity: critical
+    smtp_host: smtp.example.com
+    smtp_port: 587
+    smtp_user: alerts@example.com
+    smtp_password: ${SMTP_PASSWORD}
+    use_tls: true
+    sender: alerts@example.com
+    recipients:
+      - oncall@example.com
+      - secops@example.com
+```
+
+Inspect and verify your channels without waiting for a real finding:
+
+```bash
+logatory alerts list                 # show configured channels (secrets masked)
+logatory alerts test                 # send a sample CRITICAL finding to every channel
+logatory alerts test --webhook URL   # also test an ad-hoc webhook URL
+```
+
+The legacy `--alert-webhook` flag still works and fires **in addition** to any
+configured channels.
+
+---
+
 ### serve
 
 Start the Logatory web dashboard (requires `pip install 'logatory[web]'`).
@@ -983,6 +1035,12 @@ api_token: ""
 # Findings persistence behaviour
 # findings_retention_days: 30
 # findings_min_severity: high   # low | medium | high | critical
+
+# Alert channels — see the "Alert channels" section above.
+# alerts:
+#   - type: slack
+#     url: ${SLACK_WEBHOOK_URL}
+#     min_severity: high
 
 llm:
   provider: ollama              # ollama | claude | openai | groq | mistral

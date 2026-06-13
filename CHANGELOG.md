@@ -8,11 +8,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Alert channels:** a `notify` subsystem with Slack, Discord, generic-webhook
+  and e-mail (SMTP) notifiers. Configure any number under an `alerts:` section in
+  `config.yaml`, each with its own `min_severity`; they fire on every realtime
+  command automatically. `${ENV_VAR}` expansion keeps secrets out of the file.
+- **`logatory alerts` CLI:** `alerts list` (show configured channels, secrets
+  masked) and `alerts test` (send a sample finding to every channel).
 - This changelog.
 - CI test matrix now covers Python 3.13 and 3.14 (in addition to 3.11 and 3.12)
   on Linux, Windows and macOS; added the matching trove classifiers.
 - CONTRIBUTING note documenting the harmless upstream `httpx`/`httpx2`
   Starlette `TestClient` deprecation warning.
+
+### Changed
+- The realtime alert path now routes through the `notify` dispatcher. The legacy
+  `--alert-webhook` flag is unchanged and fires alongside configured channels.
 
 ### Fixed
 - Use the non-deprecated `HTTP_422_UNPROCESSABLE_CONTENT` status constant in the

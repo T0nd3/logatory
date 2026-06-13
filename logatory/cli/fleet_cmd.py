@@ -33,13 +33,13 @@ from logatory.fleet import (
     select_targets,
 )
 from logatory.models import Event, Finding, Severity
+from logatory.notify import build_notifiers, dispatch
 from logatory.pii.redactor import PIIRedactor
 from logatory.plugins.loader import compile_plugin_pii_patterns, load_plugins
 from logatory.rules.loader import build_engine
 from logatory.storage.dismiss_repo import DismissRepository
 from logatory.storage.errors_repo import ErrorsRepository
 from logatory.storage.findings_repo import FindingsRepository, meets_min_severity
-from logatory.tail_helpers import meets_alert_severity, post_webhook
 
 app = typer.Typer(help="Analyze logs from multiple configured targets — a fleet.")
 
@@ -443,6 +443,9 @@ def fleet_tail(
     counts = {"events": 0, "findings": 0, "pii": 0, "errors": 0, "webhooks": 0}
     events_window = 0
     last_hb = time.monotonic()
+    notifiers = build_notifiers(
+        cfg.alerts, alert_webhook=alert_webhook, alert_min_severity=alert_min_severity
+    )
 
     try:
         while True:
@@ -469,9 +472,7 @@ def fleet_tail(
                             continue
                         _print_finding(name, finding)
                         counts["findings"] += 1
-                        if alert_webhook and meets_alert_severity(finding, alert_min_severity):
-                            post_webhook(alert_webhook, finding)
-                            counts["webhooks"] += 1
+                        counts["webhooks"] += dispatch(notifiers, finding)
                         if f_repo and meets_min_severity(finding, cfg.findings_min_severity):
                             f_repo.add_findings([finding])
                 if tracker and tracker.process(event) is not None:

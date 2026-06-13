@@ -49,6 +49,49 @@ class OpenSearchConfig:
 
 
 @dataclass
+class AlertChannel:
+    """A single alert destination configured under ``alerts:`` in config.yaml.
+
+    ``type`` selects the notifier (``webhook`` | ``slack`` | ``discord`` |
+    ``email``).  ``min_severity`` is the per-channel noise floor.  The remaining
+    fields are type-specific: URL channels use ``url``; ``email`` uses the SMTP
+    fields.  ``url`` and ``smtp_password`` are passed through ``expandvars`` so
+    secrets can live in environment variables (e.g. ``url: ${SLACK_WEBHOOK}``).
+    """
+
+    type: str
+    min_severity: str = "high"
+    # webhook / slack / discord
+    url: str | None = None
+    # email (SMTP)
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    use_tls: bool = True
+    sender: str | None = None
+    recipients: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> AlertChannel:
+        def expand(v):
+            return os.path.expandvars(v) if isinstance(v, str) else v
+
+        return cls(
+            type=str(data.get("type", "")).strip().lower(),
+            min_severity=str(data.get("min_severity", "high")).strip().lower(),
+            url=expand(data.get("url")),
+            smtp_host=data.get("smtp_host"),
+            smtp_port=int(data.get("smtp_port", 587)),
+            smtp_user=data.get("smtp_user"),
+            smtp_password=expand(data.get("smtp_password")),
+            use_tls=bool(data.get("use_tls", True)),
+            sender=data.get("sender"),
+            recipients=list(data.get("recipients", []) or []),
+        )
+
+
+@dataclass
 class LLMConfig:
     provider: str = "ollama"
     model: str = "gemma3:4b"
@@ -75,6 +118,8 @@ class Config:
     api_token: str | None = None
     # Plugin directory — Python files here are auto-loaded at startup
     plugins_dir: Path | None = None
+    # Alert channels — findings at/above each channel's min_severity are pushed
+    alerts: list[AlertChannel] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path | None = None) -> Config:
@@ -109,4 +154,5 @@ class Config:
             findings_min_severity=data.get("findings_min_severity", "high"),
             api_token=api_token,
             plugins_dir=Path(data["plugins_dir"]) if data.get("plugins_dir") else None,
+            alerts=[AlertChannel.from_dict(c) for c in (data.get("alerts") or [])],
         )

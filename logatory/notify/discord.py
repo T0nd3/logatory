@@ -1,0 +1,38 @@
+"""Discord webhook notifier — coloured embed per finding."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from .base import DISCORD_COLOR, Notifier, mask_url, post_json
+
+if TYPE_CHECKING:
+    from logatory.models import Finding
+
+
+class DiscordNotifier(Notifier):
+    name = "discord"
+
+    def __init__(self, *, url: str, min_severity: str = "high") -> None:
+        super().__init__(min_severity=min_severity)
+        self.url = url
+
+    def send(self, finding: Finding) -> bool:
+        sev = finding.severity.value
+        payload = {
+            "embeds": [
+                {
+                    "title": f"{sev.upper()} — {finding.rule_id}",
+                    "description": finding.message,
+                    "color": DISCORD_COLOR.get(sev, 0xCCCCCC),
+                    "fields": [
+                        {"name": "Source", "value": finding.source, "inline": True},
+                        {"name": "Time", "value": finding.timestamp.isoformat(), "inline": True},
+                    ],
+                }
+            ]
+        }
+        return post_json(self.url, payload)
+
+    def describe(self) -> str:
+        return f"discord → {mask_url(self.url)}"

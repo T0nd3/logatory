@@ -18,6 +18,7 @@ from logatory.anomaly.detector import (
 from logatory.anomaly.features import FeatureExtractor
 from logatory.cli import serve_cmd, tail_cmd
 from logatory.cli._types import REDACT_MAP, RedactModeArg
+from logatory.cli.alerts_cmd import app as alerts_app
 from logatory.cli.anomaly_cmd import app as anomaly_app
 from logatory.cli.cloudwatch_cmd import app as cloudwatch_app
 from logatory.cli.colors import SEVERITY_COLOR
@@ -77,6 +78,7 @@ app.add_typer(anomaly_app, name="anomaly")
 app.add_typer(llm_app, name="llm")
 app.add_typer(demo_app, name="demo")
 app.add_typer(export_app, name="export")
+app.add_typer(alerts_app, name="alerts")
 
 
 def _load_config(config_path: Path | None) -> Config:

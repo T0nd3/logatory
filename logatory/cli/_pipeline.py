@@ -22,12 +22,12 @@ from collections.abc import AsyncIterator, Callable
 from logatory.config import Config
 from logatory.errors.tracker import ErrorTracker
 from logatory.models import Event, Finding
+from logatory.notify import build_notifiers, dispatch
 from logatory.pii.redactor import PIIRedactor
 from logatory.rules.engine import RuleEngine
 from logatory.storage.dismiss_repo import DismissRepository
 from logatory.storage.errors_repo import ErrorsRepository
 from logatory.storage.findings_repo import FindingsRepository, meets_min_severity
-from logatory.tail_helpers import meets_alert_severity, post_webhook
 
 
 async def run_tail_pipeline(
@@ -73,6 +73,11 @@ async def run_tail_pipeline(
         d_repo = DismissRepository(cfg.db_path)
         d_repo.open()
 
+    # Build alert channels once: config-driven plus the legacy --alert-webhook.
+    notifiers = build_notifiers(
+        cfg.alerts, alert_webhook=alert_webhook, alert_min_severity=alert_min_severity
+    )
+
     try:
         async for event in event_stream:
             # PII redaction — every nested layer sees the redacted form.
@@ -89,9 +94,7 @@ async def run_tail_pipeline(
                         continue
                     print_finding(finding)
                     counts["findings"] += 1
-                    if alert_webhook and meets_alert_severity(finding, alert_min_severity):
-                        post_webhook(alert_webhook, finding)
-                        counts["webhooks"] += 1
+                    counts["webhooks"] += dispatch(notifiers, finding)
                     if f_repo and meets_min_severity(finding, cfg.findings_min_severity):
                         f_repo.add_findings([finding])
 
