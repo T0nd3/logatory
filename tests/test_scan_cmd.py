@@ -223,6 +223,65 @@ class TestScanRuleEngine:
         assert result.exit_code == 0
 
 
+class TestScanJson:
+    def test_json_output_is_valid_and_machine_readable(self, tmp_path: Path) -> None:
+        import json
+
+        lines = [f'{{"level": "info", "message": "event {i}"}}' for i in range(5)]
+        log = _write_log(tmp_path, lines)
+        _, cfg = _cfg_file(tmp_path)
+        result = runner.invoke(app, ["scan", str(log), "--json"] + cfg)
+        assert result.exit_code == 0, result.output
+        # stdout is a single JSON object — and not the human summary
+        assert "Source   :" not in result.output
+        data = json.loads(result.output)
+        assert data["events"] == 5
+        assert data["format"] == "json_lines"
+        assert "findings" in data and isinstance(data["findings"], list)
+        assert len(data["events_sample"]) == 5
+
+    def test_json_includes_findings(self, tmp_path: Path) -> None:
+        import json
+
+        lines = [
+            f"May 21 12:00:{i:02d} server sshd[1]: "
+            f"Failed password for root from 10.0.0.1 port 22 ssh2"
+            for i in range(15)
+        ]
+        log = _write_log(tmp_path, lines, "auth.log")
+        _, cfg = _cfg_file(tmp_path)
+        result = runner.invoke(app, ["scan", str(log), "--json"] + cfg)
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["findings_count"] >= 1
+        f = data["findings"][0]
+        assert {"rule_id", "severity", "message", "source"} <= set(f)
+
+    def test_json_events_sample_respects_limit(self, tmp_path: Path) -> None:
+        import json
+
+        lines = ['{"level": "info", "message": "event"}'] * 20
+        log = _write_log(tmp_path, lines)
+        _, cfg = _cfg_file(tmp_path)
+        result = runner.invoke(app, ["scan", str(log), "--json", "--limit", "5"] + cfg)
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert data["events"] == 20
+        assert len(data["events_sample"]) == 5
+
+    def test_json_track_errors_keys(self, tmp_path: Path) -> None:
+        import json
+
+        lines = ['{"level": "error", "message": "ConnectionError: refused"}'] * 3
+        log = _write_log(tmp_path, lines)
+        _, cfg = _cfg_file(tmp_path)
+        result = runner.invoke(app, ["scan", str(log), "--json", "--track-errors"] + cfg)
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert "errors_tracked" in data
+        assert "findings_tracked" in data
+
+
 # ---------------------------------------------------------------------------
 # scan — error tracking
 # ---------------------------------------------------------------------------

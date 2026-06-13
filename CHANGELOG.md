@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`scan --json`:** emit the scan result as a single JSON object (format, event
+  and PII counts, the findings list, a bounded events sample, and — with
+  `--track-errors` — persisted counts) for CI and automation. Human formatting
+  and the optional LLM sections are skipped so stdout stays pure JSON.
 - **`logatory init`:** scaffold a `config.yaml` with a freshly generated PII salt.
   Supports `--minimal`, `--force` and `-o/--output` (creates parent directories),
   so a working config is one command away.

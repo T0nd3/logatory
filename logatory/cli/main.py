@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -131,6 +132,56 @@ def _detect_format_name(adapter) -> str:
     return "unknown"
 
 
+def _emit_scan_json(
+    *,
+    path: Path | None,
+    fmt_name: str,
+    events: list[Event],
+    findings: list[Finding],
+    pii_hits: int,
+    redact_mode: str,
+    limit: int,
+    show_all: bool,
+    track_errors: bool,
+    errors_tracked: int,
+    findings_tracked: int,
+) -> None:
+    """Print the scan result as a single JSON object (machine-readable)."""
+    sample = events if show_all else events[:limit]
+    payload: dict = {
+        "source": str(path) if path else "stdin",
+        "format": fmt_name,
+        "events": len(events),
+        "pii_hits": pii_hits,
+        "redact_mode": redact_mode,
+        "findings_count": len(findings),
+        "findings": [
+            {
+                "rule_id": f.rule_id,
+                "severity": f.severity.value,
+                "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+                "source": f.source,
+                "message": f.message,
+                "details": f.details,
+            }
+            for f in findings
+        ],
+        "events_sample": [
+            {
+                "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+                "severity": e.severity.value,
+                "source": e.source,
+                "message": e.message,
+            }
+            for e in sample
+        ],
+    }
+    if track_errors:
+        payload["errors_tracked"] = errors_tracked
+        payload["findings_tracked"] = findings_tracked
+    typer.echo(json.dumps(payload, default=str, ensure_ascii=False))
+
+
 # ---------------------------------------------------------------------------
 # scan
 # ---------------------------------------------------------------------------
@@ -146,6 +197,9 @@ def scan(
     limit: Annotated[int, typer.Option("--limit", "-n", help="Max events to display.")] = 50,
     show_all: Annotated[bool, typer.Option("--all")] = False,
     format_only: Annotated[bool, typer.Option("--format-only")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit results as a JSON object (machine-readable).")
+    ] = False,
     no_rules: Annotated[bool, typer.Option("--no-rules", help="Skip rule engine.")] = False,
     rules_dir: Annotated[
         Optional[Path], typer.Option("--rules-dir", help="Extra rules directory.")
@@ -297,6 +351,24 @@ def scan(
     # Summary
     # ------------------------------------------------------------------
     fmt_name = _detect_format_name(adapter) if adapter else "unknown"
+
+    # Machine-readable output short-circuits all human formatting (incl. LLM).
+    if json_output:
+        _emit_scan_json(
+            path=path,
+            fmt_name=fmt_name,
+            events=events,
+            findings=findings,
+            pii_hits=pii_hits_total,
+            redact_mode=redact.value,
+            limit=limit,
+            show_all=show_all,
+            track_errors=track_errors,
+            errors_tracked=errors_tracked,
+            findings_tracked=findings_tracked,
+        )
+        return
+
     sep = "-" * 60
     typer.echo(
         f"\n{sep}\n"

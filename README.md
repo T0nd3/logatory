@@ -196,6 +196,7 @@ logatory scan [OPTIONS] [PATH]
 | `--limit/-n` | `50` | Max events to display in output. |
 | `--all` | off | Display all events (ignores `--limit`). |
 | `--format-only` | off | Print detection summary and exit, skip event listing. |
+| `--json` | off | Emit the result as a single JSON object (machine-readable, for CI). |
 | `--no-rules` | off | Skip the rule engine entirely. |
 | `--rules-dir` | — | Additional YAML rules directory. |
 | `--track-errors` | off | Persist error groups and HIGH/CRITICAL findings to SQLite. |
