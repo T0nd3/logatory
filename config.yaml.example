@@ -19,10 +19,13 @@ api_token: ""
 # Applies to every realtime command (tail, docker tail, fleet tail, …).
 # Types: slack | discord | webhook | email.  ${ENV_VAR} is expanded, so keep
 # secrets in the environment. Verify with: logatory alerts test
+# Optional 'cooldown' (seconds) throttles repeats of the same finding
+# (rule_id + source) per channel — 0 (default) delivers every match.
 # alerts:
 #   - type: slack
 #     url: ${SLACK_WEBHOOK_URL}
 #     min_severity: high
+#     cooldown: 300        # at most one alert per rule+source every 5 min
 #   - type: webhook
 #     url: https://hooks.example.com/security
 #     min_severity: medium

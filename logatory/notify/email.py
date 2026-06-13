@@ -31,8 +31,9 @@ class EmailNotifier(Notifier):
         use_tls: bool = True,
         sender: str | None = None,
         min_severity: str = "high",
+        cooldown: float = 0,
     ) -> None:
-        super().__init__(min_severity=min_severity)
+        super().__init__(min_severity=min_severity, cooldown=cooldown)
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
         self.smtp_user = smtp_user

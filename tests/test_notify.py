@@ -254,6 +254,67 @@ class TestDispatch:
 
 
 # ---------------------------------------------------------------------------
+# Throttling / dedup
+# ---------------------------------------------------------------------------
+
+
+class TestThrottle:
+    def test_cooldown_zero_never_throttles(self):
+        n = WebhookNotifier(url="http://x", min_severity="low")  # cooldown defaults to 0
+        n.record_sent(_finding(), now=100.0)
+        assert n.is_throttled(_finding(), now=100.0) is False
+
+    def test_throttled_within_window(self):
+        n = WebhookNotifier(url="http://x", min_severity="low", cooldown=300)
+        assert n.is_throttled(_finding(), now=1000.0) is False  # nothing sent yet
+        n.record_sent(_finding(), now=1000.0)
+        assert n.is_throttled(_finding(), now=1200.0) is True  # 200s < 300s
+
+    def test_allowed_after_window(self):
+        n = WebhookNotifier(url="http://x", min_severity="low", cooldown=300)
+        n.record_sent(_finding(), now=1000.0)
+        assert n.is_throttled(_finding(), now=1400.0) is False  # 400s > 300s
+
+    def test_distinct_findings_tracked_separately(self):
+        n = WebhookNotifier(url="http://x", min_severity="low", cooldown=300)
+        a = Finding(
+            rule_id="A",
+            severity=FindingSeverity.HIGH,
+            message="m",
+            source="s1",
+            timestamp=datetime(2026, 6, 13, tzinfo=UTC),
+        )
+        b = Finding(
+            rule_id="B",
+            severity=FindingSeverity.HIGH,
+            message="m",
+            source="s1",
+            timestamp=datetime(2026, 6, 13, tzinfo=UTC),
+        )
+        n.record_sent(a, now=1000.0)
+        assert n.is_throttled(a, now=1100.0) is True
+        assert n.is_throttled(b, now=1100.0) is False  # different rule_id
+
+    def test_dispatch_suppresses_repeat(self, capture_post, monkeypatch):
+        clock = {"t": 1000.0}
+        monkeypatch.setattr("time.monotonic", lambda: clock["t"])
+        notifiers = [WebhookNotifier(url="http://a", min_severity="low", cooldown=300)]
+
+        assert dispatch(notifiers, _finding()) == 1  # first delivered
+        assert dispatch(notifiers, _finding()) == 0  # throttled, suppressed
+        clock["t"] = 1400.0
+        assert dispatch(notifiers, _finding()) == 1  # window elapsed
+        assert len(capture_post) == 2
+
+    def test_dispatch_failed_send_not_recorded(self, fail_post, monkeypatch):
+        monkeypatch.setattr("time.monotonic", lambda: 1000.0)
+        n = WebhookNotifier(url="http://a", min_severity="low", cooldown=300)
+        assert dispatch([n], _finding()) == 0
+        # The failed send must not have armed the cooldown.
+        assert n.is_throttled(_finding(), now=1000.0) is False
+
+
+# ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
 
@@ -303,6 +364,17 @@ class TestAlertChannelConfig:
         cfg_file = tmp_path / "config.yaml"
         cfg_file.write_text("db_path: x.db\n", encoding="utf-8")
         assert Config.load(cfg_file).alerts == []
+
+    def test_cooldown_defaults_to_zero(self):
+        assert AlertChannel.from_dict({"type": "slack", "url": "http://x"}).cooldown == 0
+
+    def test_cooldown_parsed(self):
+        ch = AlertChannel.from_dict({"type": "slack", "url": "http://x", "cooldown": 300})
+        assert ch.cooldown == 300
+
+    def test_build_notifier_forwards_cooldown(self):
+        n = build_notifier(AlertChannel("webhook", url="http://x", cooldown=120))
+        assert n.cooldown == 120
 
 
 # ---------------------------------------------------------------------------

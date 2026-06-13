@@ -557,6 +557,7 @@ alerts:
   - type: slack
     url: ${SLACK_WEBHOOK_URL}      # ${ENV_VAR} is expanded — keep secrets out of the file
     min_severity: high
+    cooldown: 300                  # throttle: at most one alert per rule+source / 5 min
 
   - type: discord
     url: ${DISCORD_WEBHOOK_URL}
@@ -586,6 +587,12 @@ logatory alerts list                 # show configured channels (secrets masked)
 logatory alerts test                 # send a sample CRITICAL finding to every channel
 logatory alerts test --webhook URL   # also test an ad-hoc webhook URL
 ```
+
+Set an optional per-channel **`cooldown`** (seconds) to tame alert storms: while
+it is set, repeats of the *same* finding (identical `rule_id` + `source`) are
+suppressed until the window elapses. `0` (the default) delivers every match. Only
+successful deliveries arm the timer, so a channel that was down still gets the
+next attempt.
 
 The legacy `--alert-webhook` flag still works and fires **in addition** to any
 configured channels.

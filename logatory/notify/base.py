@@ -12,6 +12,7 @@ is unreachable.  ``send`` returns ``True`` on success and ``False`` on any error
 from __future__ import annotations
 
 import json
+import time
 import urllib.request
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
@@ -77,12 +78,32 @@ class Notifier(ABC):
 
     name: str = "notifier"
 
-    def __init__(self, *, min_severity: str = "high") -> None:
+    def __init__(self, *, min_severity: str = "high", cooldown: float = 0) -> None:
         self.min_severity = min_severity
+        self.cooldown = cooldown
+        self._last_sent: dict[str, float] = {}
 
     def matches(self, finding: Finding) -> bool:
         """True if *finding* is severe enough for this channel."""
         return meets_alert_severity(finding, self.min_severity)
+
+    @staticmethod
+    def _dedup_key(finding: Finding) -> str:
+        """Identity used for throttling: the same rule firing on the same source."""
+        return f"{finding.rule_id}\x00{finding.source}"
+
+    def is_throttled(self, finding: Finding, *, now: float | None = None) -> bool:
+        """True if an identical finding was delivered within ``cooldown`` seconds."""
+        if self.cooldown <= 0:
+            return False
+        now = time.monotonic() if now is None else now
+        last = self._last_sent.get(self._dedup_key(finding))
+        return last is not None and (now - last) < self.cooldown
+
+    def record_sent(self, finding: Finding, *, now: float | None = None) -> None:
+        """Remember that *finding* was just delivered (for throttling)."""
+        if self.cooldown > 0:
+            self._last_sent[self._dedup_key(finding)] = time.monotonic() if now is None else now
 
     @abstractmethod
     def send(self, finding: Finding) -> bool:

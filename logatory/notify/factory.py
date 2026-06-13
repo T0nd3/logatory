@@ -29,7 +29,9 @@ def build_notifier(channel: AlertChannel) -> Notifier:
     if t in _URL_TYPES:
         if not channel.url:
             raise ValueError(f"Alert channel '{t}' requires a 'url'.")
-        return _URL_TYPES[t](url=channel.url, min_severity=channel.min_severity)
+        return _URL_TYPES[t](
+            url=channel.url, min_severity=channel.min_severity, cooldown=channel.cooldown
+        )
     if t == "email":
         if not channel.smtp_host or not channel.recipients:
             raise ValueError("Alert channel 'email' requires 'smtp_host' and 'recipients'.")
@@ -42,6 +44,7 @@ def build_notifier(channel: AlertChannel) -> Notifier:
             sender=channel.sender,
             recipients=channel.recipients,
             min_severity=channel.min_severity,
+            cooldown=channel.cooldown,
         )
     raise ValueError(f"Unknown alert channel type '{t}'. Valid: webhook, slack, discord, email.")
 
@@ -64,9 +67,15 @@ def build_notifiers(
 
 
 def dispatch(notifiers: Sequence[Notifier], finding: Finding) -> int:
-    """Send *finding* to every notifier that wants it. Return the number delivered."""
+    """Send *finding* to every notifier that wants it. Return the number delivered.
+
+    A channel with a ``cooldown`` suppresses repeats of the same finding
+    (identical ``rule_id``+``source``) within its window; only successful
+    deliveries reset the timer, so a failed send is retried next time.
+    """
     sent = 0
     for n in notifiers:
-        if n.matches(finding) and n.send(finding):
+        if n.matches(finding) and not n.is_throttled(finding) and n.send(finding):
+            n.record_sent(finding)
             sent += 1
     return sent

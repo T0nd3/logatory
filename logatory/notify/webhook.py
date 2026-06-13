@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 class WebhookNotifier(Notifier):
     name = "webhook"
 
-    def __init__(self, *, url: str, min_severity: str = "high") -> None:
-        super().__init__(min_severity=min_severity)
+    def __init__(self, *, url: str, min_severity: str = "high", cooldown: float = 0) -> None:
+        super().__init__(min_severity=min_severity, cooldown=cooldown)
         self.url = url
 
     def send(self, finding: Finding) -> bool:

@@ -46,7 +46,8 @@ def list_channels(config: _ConfigOpt = None) -> None:
 
     typer.echo(f"{len(notifiers)} alert channel(s):")
     for n in notifiers:
-        typer.echo(f"  • [{n.name}] min_severity={n.min_severity}  {n.describe()}")
+        cooldown = f"  cooldown={n.cooldown:g}s" if n.cooldown else ""
+        typer.echo(f"  • [{n.name}] min_severity={n.min_severity}{cooldown}  {n.describe()}")
 
 
 @app.command("test")
