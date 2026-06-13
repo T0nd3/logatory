@@ -75,9 +75,16 @@ async def collect_scan(
     event_stream: AsyncIterator[Event],
     redactor: PIIRedactor,
     engine: RuleEngine | None,
+    *,
+    result: ScanResult | None = None,
 ) -> ScanResult:
-    """Drain *event_stream*, redacting PII and running rules; return the result."""
-    result = ScanResult()
+    """Drain *event_stream*, redacting PII and running rules; return the result.
+
+    Pass an existing *result* to have it filled in place — useful when the caller
+    wants to render whatever was collected so far after a ``KeyboardInterrupt``.
+    """
+    if result is None:
+        result = ScanResult()
     async for event in event_stream:
         redacted = redactor.redact(event.message)
         event.message = redacted.text

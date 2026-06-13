@@ -14,15 +14,36 @@ from logatory.adapters.opensearch_config import (
     TimeRange,
 )
 from logatory.cli._pipeline import run_tail_pipeline
-from logatory.cli.colors import SEVERITY_COLOR
+from logatory.cli._scan import ScanResult, collect_scan, print_finding, render_scan
 from logatory.config import Config
-from logatory.models import Event, Finding
 from logatory.pii.redactor import PIIRedactor, RedactMode
 from logatory.rules import BUILTIN_RULES_DIR
 from logatory.rules.engine import RuleEngine
 from logatory.rules.loader import load_rules_dir
 
 app = typer.Typer(help="Query logs from an OpenSearch / Elasticsearch cluster.")
+
+
+def _build_engine(no_rules: bool, rules_dir: Optional[Path]) -> RuleEngine | None:
+    if no_rules:
+        return None
+    all_rules = list(load_rules_dir(BUILTIN_RULES_DIR))
+    if rules_dir and rules_dir.is_dir():
+        all_rules.extend(load_rules_dir(rules_dir))
+    return RuleEngine(all_rules)
+
+
+def _parse_filters(filter_: Optional[list[str]]) -> list[dict[str, str]]:
+    filters: list[dict[str, str]] = []
+    for f in filter_ or []:
+        if "=" not in f:
+            typer.echo(
+                f"Warning: ignoring malformed filter '{f}' (expected field=value)", err=True
+            )
+            continue
+        k, _, v = f.partition("=")
+        filters.append({"field": k.strip(), "value": v.strip()})
+    return filters
 
 
 @app.command("scan")
@@ -86,21 +107,10 @@ def opensearch_scan(
     )
     has_auth = any([auth.username, auth.api_key])
 
-    # Parse --filter key=value pairs
-    filters: list[dict[str, str]] = []
-    for f in filter_ or []:
-        if "=" not in f:
-            typer.echo(
-                f"Warning: ignoring malformed filter '{f}' (expected field=value)", err=True
-            )
-            continue
-        k, _, v = f.partition("=")
-        filters.append({"field": k.strip(), "value": v.strip()})
-
     query = OpenSearchQuery(
         index=index,
         time_range=TimeRange(since=since, until=until),
-        filters=filters,
+        filters=_parse_filters(filter_),
         field_mapping=FieldMapping(
             timestamp=ts_field,
             message=msg_field,
@@ -112,19 +122,11 @@ def opensearch_scan(
     )
 
     redactor = PIIRedactor.from_config(
-        salt=cfg.pii_salt,
-        rules_path=cfg.pii_rules_path,
-        mode=RedactMode.REDACT,
+        salt=cfg.pii_salt, rules_path=cfg.pii_rules_path, mode=RedactMode.REDACT
     )
+    engine = _build_engine(no_rules, rules_dir)
 
-    engine: RuleEngine | None = None
-    if not no_rules:
-        all_rules = list(load_rules_dir(BUILTIN_RULES_DIR))
-        if rules_dir and rules_dir.is_dir():
-            all_rules.extend(load_rules_dir(rules_dir))
-        engine = RuleEngine(all_rules)
-
-    async def _run() -> None:
+    async def _run() -> ScanResult:
         adapter = OpenSearchAdapter(
             host=effective_host,
             port=effective_port,
@@ -133,62 +135,25 @@ def opensearch_scan(
             use_ssl=use_ssl,
             verify_certs=not no_verify,
         )
+        return await collect_scan(adapter.events(), redactor, engine)
 
-        events: list[Event] = []
-        findings: list[Finding] = []
-        pii_hits_total = 0
+    try:
+        result = asyncio.run(_run())
+    except Exception as e:
+        typer.echo(f"Error connecting to OpenSearch: {e}", err=True)
+        raise typer.Exit(1)
 
-        try:
-            async for event in adapter.events():
-                result = redactor.redact(event.message)
-                event.message = result.text
-                event.raw = redactor.redact(event.raw).text
-                pii_hits_total += len(result.hits)
-                events.append(event)
-                if engine:
-                    findings.extend(engine.process(event))
-        except Exception as e:
-            typer.echo(f"Error connecting to OpenSearch: {e}", err=True)
-            raise typer.Exit(1)
-
-        sep = "-" * 60
-        typer.echo(
-            f"\n{sep}\n"
-            f"  Source   : {effective_host}:{effective_port}/{index}\n"
-            f"  Events   : {len(events):,}\n"
-            f"  PII hits : {pii_hits_total:,}\n"
-            f"  Findings : {len(findings):,}\n"
-            f"{sep}"
-        )
-
-        sample = events if show_all else events[:limit]
-        if sample:
-            typer.echo(f"\n  Events ({len(sample)} of {len(events):,}):\n")
-            for i, ev in enumerate(sample, 1):
-                ts = ev.timestamp.strftime("%Y-%m-%d %H:%M:%S") if ev.timestamp else "no timestamp"
-                sev = ev.severity.value.upper().ljust(8)
-                typer.echo(f"  [{i:>5}] {ts}  {sev}  {ev.message[:120]}")
-            if not show_all and len(events) > limit:
-                typer.echo(f"\n  ... {len(events) - limit:,} more. Use --all or --limit N.")
-
-        if findings:
-            typer.echo(f"\n  Findings ({len(findings)}):\n")
-            for finding in findings:
-                color = SEVERITY_COLOR.get(finding.severity.value, typer.colors.WHITE)
-                ts = finding.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-                line = f"  [{finding.severity.value.upper()}] {ts}  {finding.rule_id}  {finding.message}"
-                typer.echo(typer.style(line, fg=color))
-        elif not no_rules:
-            typer.echo("\n  No findings.")
-
-    asyncio.run(_run())
-
-
-def _print_finding(finding: Finding) -> None:
-    color = SEVERITY_COLOR.get(finding.severity.value, typer.colors.WHITE)
-    ts = finding.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"  [{finding.severity.value.upper()}] {ts}  {finding.rule_id}  {finding.message}"
-    typer.echo(typer.style(line, fg=color))
+    render_scan(
+        result,
+        source_label=f"{effective_host}:{effective_port}/{index}",
+        redact_mode="redact",
+        limit=limit,
+        show_all=show_all,
+        no_rules=no_rules,
+        cfg=cfg,
+        show_source=False,
+        msg_width=120,
+    )
 
 
 @app.command("tail")
@@ -256,18 +221,10 @@ def opensearch_tail(
     )
     has_auth = any([auth.username, auth.api_key])
 
-    filters: list[dict[str, str]] = []
-    for f in filter_ or []:
-        if "=" not in f:
-            typer.echo(f"Warning: ignoring malformed filter '{f}'", err=True)
-            continue
-        k, _, v = f.partition("=")
-        filters.append({"field": k.strip(), "value": v.strip()})
-
     query = OpenSearchQuery(
         index=index,
         time_range=TimeRange(since=since),
-        filters=filters,
+        filters=_parse_filters(filter_),
         field_mapping=FieldMapping(
             timestamp=ts_field,
             message=msg_field,
@@ -277,17 +234,9 @@ def opensearch_tail(
     )
 
     redactor = PIIRedactor.from_config(
-        salt=cfg.pii_salt,
-        rules_path=cfg.pii_rules_path,
-        mode=RedactMode.REDACT,
+        salt=cfg.pii_salt, rules_path=cfg.pii_rules_path, mode=RedactMode.REDACT
     )
-
-    engine: RuleEngine | None = None
-    if not no_rules:
-        all_rules = list(load_rules_dir(BUILTIN_RULES_DIR))
-        if rules_dir and rules_dir.is_dir():
-            all_rules.extend(load_rules_dir(rules_dir))
-        engine = RuleEngine(all_rules)
+    engine = _build_engine(no_rules, rules_dir)
 
     sep = "-" * 60
     typer.echo(f"\n{sep}")
@@ -310,14 +259,13 @@ def opensearch_tail(
             use_ssl=use_ssl,
             verify_certs=not no_verify,
         )
-
         await run_tail_pipeline(
             event_stream=adapter.poll(poll_interval),
             redactor=redactor,
             engine=engine,
             counts=counts,
             cfg=cfg,
-            print_finding=_print_finding,
+            print_finding=print_finding,
             track_errors=track_errors,
             track_findings=track_findings,
             alert_webhook=alert_webhook,
