@@ -5,6 +5,7 @@ from logatory.parsers.json_lines import JsonLinesParser
 from logatory.parsers.logfmt import LogfmtParser
 from logatory.parsers.nginx import NginxCombinedParser
 from logatory.parsers.syslog import AuthLogParser, SyslogParser
+from logatory.parsers.traefik import TraefikParser
 
 
 class TestJsonLinesParser:
@@ -240,6 +241,56 @@ class TestHAProxyParser:
 
     def test_garbage_returns_none(self):
         assert self.parser.parse("May 18 09:55:01 host systemd[1]: started") is None
+
+
+class TestTraefikParser:
+    def setup_method(self):
+        self.parser = TraefikParser("traefik")
+
+    def test_basic_line(self):
+        line = (
+            '192.168.1.20 - jdoe [13/Jun/2026:08:15:04 +0000] "GET /api/v1/users HTTP/1.1" '
+            '200 1234 "https://example.com" "Mozilla/5.0" 42 "users@docker" '
+            '"http://172.17.0.3:80" 12ms'
+        )
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.severity == Severity.INFO
+        assert event.message == "GET /api/v1/users -> 200"
+        assert event.parsed_fields["client_ip"] == "192.168.1.20"
+        assert event.parsed_fields["user"] == "jdoe"
+        assert event.parsed_fields["method"] == "GET"
+        assert event.parsed_fields["status"] == 200
+        assert event.parsed_fields["router"] == "users@docker"
+        assert event.parsed_fields["server"] == "http://172.17.0.3:80"
+        assert event.parsed_fields["duration_ms"] == 12
+        assert event.timestamp is not None
+        assert event.timestamp.year == 2026
+
+    def test_404_is_warning(self):
+        line = (
+            '203.0.113.7 - - [13/Jun/2026:08:15:05 +0000] "GET /missing HTTP/1.1" '
+            '404 512 "-" "curl/7.88.1" 43 "web@docker" "http://172.17.0.4:80" 3ms'
+        )
+        event = self.parser.parse(line)
+        assert event.severity == Severity.WARNING
+
+    def test_503_is_error(self):
+        line = (
+            '198.51.100.9 - - [13/Jun/2026:08:15:06 +0000] "POST /checkout HTTP/1.1" '
+            '503 0 "-" "Mozilla/5.0" 44 "api@docker" "http://172.17.0.5:80" 87ms'
+        )
+        event = self.parser.parse(line)
+        assert event.severity == Severity.ERROR
+        assert event.parsed_fields["size"] == "0"
+
+    def test_empty_line_returns_none(self):
+        assert self.parser.parse("") is None
+
+    def test_plain_nginx_line_returns_none(self):
+        # A combined-log line without Traefik's trailing fields must not match.
+        line = '127.0.0.1 - - [13/Jun/2026:08:15:04 +0000] "GET / HTTP/1.1" 200 1234'
+        assert self.parser.parse(line) is None
 
 
 class TestSyslogParser:

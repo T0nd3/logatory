@@ -13,6 +13,7 @@ from .plugins import plugin_parsers
 class LogFormat(str, Enum):
     JSON_LINES = "json_lines"
     NGINX_COMBINED = "nginx_combined"
+    TRAEFIK = "traefik"
     APACHE_ERROR = "apache_error"
     HAPROXY = "haproxy"
     SYSLOG = "syslog"
@@ -24,6 +25,12 @@ class LogFormat(str, Enum):
 
 
 _NGINX_RE = re.compile(r'^\S+ \S+ \S+ \[.+\] "[A-Z]+ .+ HTTP/\d\.\d" \d{3} \d+')
+# Traefik's extended common log: nginx-like prefix plus four trailing signature
+# fields — request count, "router", "server url" and a "<n>ms" duration.
+_TRAEFIK_RE = re.compile(
+    r'^\S+ \S+ \S+ \[.+\] "[A-Z]+ .+ HTTP/\d\.\d" \d{3} \S+ '
+    r'"[^"]*" "[^"]*" \d+ "[^"]*" "[^"]*" \d+ms'
+)
 _APACHE_ERROR_RE = re.compile(r"^\[[^\]]+\] \[(?:\w+:)?\w+\] ")
 _HAPROXY_RE = re.compile(r"\S+:\d+ \[\d{2}/\w{3}/\d{4}:[\d:]+\.\d+\] \S+ \S+/\S+ [\d/+-]+ \d{3} ")
 _SYSLOG_RE = re.compile(r"^\w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \S+ \S+(\[\d+\])?:")
@@ -63,6 +70,12 @@ class FormatDetector:
         auth_hits = sum(1 for line in non_empty if _AUTH_LOG_RE.match(line))
         if auth_hits / len(non_empty) >= 0.6:
             return LogFormat.AUTH_LOG
+
+        # Traefik's common log starts like an nginx combined line, so its more
+        # specific signature (trailing router/server/duration) is checked first.
+        traefik_hits = sum(1 for line in non_empty if _TRAEFIK_RE.match(line))
+        if traefik_hits / len(non_empty) >= 0.6:
+            return LogFormat.TRAEFIK
 
         nginx_hits = sum(1 for line in non_empty if _NGINX_RE.match(line))
         if nginx_hits / len(non_empty) >= 0.6:

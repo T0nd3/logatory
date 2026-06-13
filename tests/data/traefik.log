@@ -1,0 +1,4 @@
+192.168.1.20 - - [13/Jun/2026:08:15:04 +0000] "GET /api/v1/users HTTP/1.1" 200 1234 "https://example.com" "Mozilla/5.0" 42 "users@docker" "http://172.17.0.3:80" 12ms
+203.0.113.7 - jdoe [13/Jun/2026:08:15:05 +0000] "GET /missing HTTP/1.1" 404 512 "-" "curl/7.88.1" 43 "web@docker" "http://172.17.0.4:80" 3ms
+198.51.100.9 - - [13/Jun/2026:08:15:06 +0000] "POST /checkout HTTP/1.1" 503 0 "-" "Mozilla/5.0" 44 "api@docker" "http://172.17.0.5:80" 87ms
+10.0.0.5 - - [13/Jun/2026:08:15:07 +0000] "GET /assets/style.css HTTP/1.1" 200 4096 "-" "Mozilla/5.0" 45 "static@docker" "http://172.17.0.6:80" 1ms

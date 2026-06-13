@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Parser:** Traefik access log in its *common* format (the extended common log
+  with Traefik's trailing request-count / router / server / duration fields).
+  Auto-detected ahead of nginx so it is not mistaken for a plain combined log;
+  Traefik's JSON access logs continue to parse via the JSON-Lines parser.
 - **`logatory agent`:** a tool-using investigation agent that runs a multi-step
   loop over your local data. `agent investigate <fingerprint>` triages a single
   tracked error; `agent ask "<question>"` answers a free-form question; `agent

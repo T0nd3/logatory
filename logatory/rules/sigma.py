@@ -34,12 +34,13 @@ _LEVEL_MAP = {
 # Sigma logsource → our format names
 _LOGSOURCE_MAP: dict[tuple[str, str], list[str]] = {
     ("category", "authentication"): ["auth_log", "syslog"],
-    ("category", "webserver"): ["nginx_combined", "apache_error"],
-    ("category", "proxy"): ["nginx_combined", "haproxy"],
+    ("category", "webserver"): ["nginx_combined", "apache_error", "traefik"],
+    ("category", "proxy"): ["nginx_combined", "haproxy", "traefik"],
     ("service", "sshd"): ["auth_log", "syslog"],
     ("service", "nginx"): ["nginx_combined"],
     ("service", "apache"): ["nginx_combined", "apache_error"],
     ("service", "haproxy"): ["haproxy"],
+    ("service", "traefik"): ["traefik"],
     ("product", "windows"): ["evtx"],
 }
 

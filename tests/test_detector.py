@@ -26,6 +26,26 @@ def test_detects_nginx_combined():
     assert FormatDetector().detect(sample) == LogFormat.NGINX_COMBINED
 
 
+def test_detects_traefik():
+    sample = _sample("traefik.log")
+    assert FormatDetector().detect(sample) == LogFormat.TRAEFIK
+
+
+def test_traefik_not_mistaken_for_nginx():
+    # Traefik's common log opens like an nginx combined line; its trailing
+    # router/server/duration fields must steer detection to TRAEFIK.
+    sample = [
+        '192.168.1.20 - - [13/Jun/2026:08:15:04 +0000] "GET /api HTTP/1.1" '
+        '200 1234 "-" "Mozilla/5.0" 42 "web@docker" "http://172.17.0.3:80" 12ms'
+    ]
+    assert FormatDetector().detect(sample) == LogFormat.TRAEFIK
+
+
+def test_plain_nginx_not_mistaken_for_traefik():
+    sample = _sample("nginx_access.log")
+    assert FormatDetector().detect(sample) != LogFormat.TRAEFIK
+
+
 def test_detects_apache_error():
     sample = _sample("apache_error.log")
     assert FormatDetector().detect(sample) == LogFormat.APACHE_ERROR

@@ -9,6 +9,7 @@ from .nginx import NginxCombinedParser
 from .plaintext import PlaintextParser
 from .plugins import get_plugin_parser
 from .syslog import AuthLogParser, SyslogParser
+from .traefik import TraefikParser
 
 
 def get_parser(fmt: LogFormat | str, source: str) -> BaseParser:
@@ -17,6 +18,8 @@ def get_parser(fmt: LogFormat | str, source: str) -> BaseParser:
             return JsonLinesParser(source)
         case LogFormat.NGINX_COMBINED:
             return NginxCombinedParser(source)
+        case LogFormat.TRAEFIK:
+            return TraefikParser(source)
         case LogFormat.APACHE_ERROR:
             return ApacheErrorParser(source)
         case LogFormat.HAPROXY:
