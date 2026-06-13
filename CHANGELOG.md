@@ -10,12 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **`logatory agent`:** a tool-using investigation agent that runs a multi-step
   loop over your local data. `agent investigate <fingerprint>` triages a single
-  tracked error; `agent ask "<question>"` answers a free-form question. The agent
-  calls read-only DB tools (error records, recent occurrences with stack traces,
-  related errors, matching findings) to gather evidence before answering.
-  `--max-steps` bounds the loop, `--verbose` shows each tool call. Requires a
-  tool-capable provider (`claude` or any OpenAI-compatible endpoint, including a
-  local Ollama via `/v1`); other providers exit cleanly with guidance.
+  tracked error; `agent ask "<question>"` answers a free-form question; `agent
+  triage` surveys the whole dataset and returns a prioritized report (no
+  fingerprint needed). The agent calls read-only DB tools to gather evidence
+  before answering. `--max-steps` bounds the loop, `--verbose` shows each tool
+  call, `--json` emits a machine-readable result for CI. Requires a tool-capable
+  provider (`claude` or any OpenAI-compatible endpoint, including a local Ollama
+  via `/v1`); other providers exit cleanly with guidance.
+- **Agent tools:** beyond the per-error lookups, the agent can now call
+  `get_summary` (dataset overview), `error_trend` (daily volume), `list_regressions`
+  (errors that came back), `top_finding_rules` (most frequent/severe detections)
+  and `get_findings_by_rule` (drill-down) — all read-only and size-bounded.
 - **Provider-neutral tool-use layer** (`llm/tools.py`, `llm/agent.py`): a small
   `Msg`/`ToolSpec`/`ToolCall`/`ToolResult` model with per-provider converters,
   plus a bounded agent loop. `chat_with_tools` is now implemented for the Claude

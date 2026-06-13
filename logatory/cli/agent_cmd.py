@@ -8,6 +8,7 @@ until it can answer.  It needs a provider that supports function/tool calling
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -71,8 +72,26 @@ def _prepare_client(cfg: Config) -> AbstractLLMClient:
     return client
 
 
-def _render(result: AgentResult, *, verbose: bool) -> None:
+def _render(result: AgentResult, *, verbose: bool, as_json: bool = False) -> None:
     """Print the agent's tool steps (optionally) and its final answer."""
+    if as_json:
+        payload = {
+            "answer": result.answer,
+            "truncated": result.truncated,
+            "iterations": result.iterations,
+            "steps": [
+                {
+                    "kind": s.kind,
+                    "name": s.name,
+                    "arguments": s.arguments,
+                    "result": s.result,
+                }
+                for s in result.steps
+            ],
+        }
+        typer.echo(json.dumps(payload, default=str, ensure_ascii=False))
+        return
+
     if verbose:
         tool_steps = [s for s in result.steps if s.kind == "tool_call"]
         if tool_steps:
@@ -100,19 +119,22 @@ def _render(result: AgentResult, *, verbose: bool) -> None:
     typer.echo("-" * 55)
 
 
-def _run_agent(cfg: Config, task: str, *, max_steps: int, verbose: bool) -> None:
+def _run_agent(
+    cfg: Config, task: str, *, max_steps: int, verbose: bool, as_json: bool = False
+) -> None:
     client = _prepare_client(cfg)
     tools = build_investigation_tools(cfg.db_path)
     agent = Agent(client, tools, system=_SYSTEM_PROMPT, max_iterations=max_steps)
-    typer.echo(
-        f"\n  Provider: {cfg.llm.provider}  Model: {cfg.llm.model}  (max {max_steps} steps)"
-    )
+    if not as_json:
+        typer.echo(
+            f"\n  Provider: {cfg.llm.provider}  Model: {cfg.llm.model}  (max {max_steps} steps)"
+        )
     try:
         result = agent.run(task)
     except Exception as e:
         typer.echo(f"\n  Agent error: {e}", err=True)
         raise typer.Exit(1)
-    _render(result, verbose=verbose)
+    _render(result, verbose=verbose, as_json=as_json)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +151,9 @@ def agent_investigate(
     max_steps: Annotated[int, typer.Option("--max-steps", help="Max tool-use iterations.")] = 8,
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Show each tool call and its result.")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit the result as a JSON object (for CI).")
     ] = False,
 ) -> None:
     """Run the triage agent on a single tracked error to find its root cause."""
@@ -147,7 +172,7 @@ def agent_investigate(
         "occurrences (stack traces), look for related errors and matching findings, "
         "then explain the most likely root cause and recommend next steps."
     )
-    _run_agent(cfg, task, max_steps=max_steps, verbose=verbose)
+    _run_agent(cfg, task, max_steps=max_steps, verbose=verbose, as_json=json_output)
 
 
 # ---------------------------------------------------------------------------
@@ -165,7 +190,42 @@ def agent_ask(
     verbose: Annotated[
         bool, typer.Option("--verbose", "-v", help="Show each tool call and its result.")
     ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit the result as a JSON object (for CI).")
+    ] = False,
 ) -> None:
     """Ask the agent a free-form question; it gathers evidence with tools as needed."""
     cfg = Config.load(config)
-    _run_agent(cfg, question, max_steps=max_steps, verbose=verbose)
+    _run_agent(cfg, question, max_steps=max_steps, verbose=verbose, as_json=json_output)
+
+
+# ---------------------------------------------------------------------------
+# agent triage
+# ---------------------------------------------------------------------------
+
+_TRIAGE_TASK = (
+    "Triage the current state of the system. Begin with get_summary to orient "
+    "yourself, then use list_errors (try both sort=count and sort=severity), "
+    "top_finding_rules, list_regressions and error_trend to find what matters most. "
+    "When an error or rule looks important, drill in with get_occurrences or "
+    "get_findings_by_rule for concrete evidence. Finish with a prioritized report: "
+    "for each top issue give its severity, why it matters, the supporting evidence, "
+    "and a recommended next action. If there is little or no data, say so plainly."
+)
+
+
+@app.command("triage")
+def agent_triage(
+    config: Annotated[Optional[Path], typer.Option("--config", "-c")] = None,
+    max_steps: Annotated[int, typer.Option("--max-steps", help="Max tool-use iterations.")] = 10,
+    verbose: Annotated[
+        bool, typer.Option("--verbose", "-v", help="Show each tool call and its result.")
+    ] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Emit the result as a JSON object (for CI).")
+    ] = False,
+) -> None:
+    """Auto-triage the whole dataset: the agent surveys errors and findings and
+    produces a prioritized report — no fingerprint needed."""
+    cfg = Config.load(config)
+    _run_agent(cfg, _TRIAGE_TASK, max_steps=max_steps, verbose=verbose, as_json=json_output)

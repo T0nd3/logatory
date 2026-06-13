@@ -8,7 +8,7 @@ offline: LLM clients are replaced by scripted fakes.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -383,6 +383,94 @@ def test_search_findings_missing_table(tmp_path):
     assert json.loads(_call(tools, "search_findings", keyword="x")) == []
 
 
+def test_get_summary_tool(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    data = json.loads(_call(tools, "get_summary"))
+    assert data["errors"]["total_error_types"] == 2
+    assert data["findings"]["total"] == 1
+    assert data["errors"]["by_severity"].get("error") == 1
+
+
+def test_top_finding_rules_tool(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    rows = json.loads(_call(tools, "top_finding_rules", sort="severity", limit=5))
+    assert rows
+    assert rows[0]["rule_id"] == "net.refused"
+    assert rows[0]["count"] == 1
+
+
+def test_get_findings_by_rule_tool(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    rows = json.loads(_call(tools, "get_findings_by_rule", rule_id="net.refused"))
+    assert rows
+    assert rows[0]["message"] == "connection refused spike"
+
+
+def test_error_trend_and_regressions_are_lists(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    assert isinstance(json.loads(_call(tools, "error_trend", days=14)), list)
+    assert isinstance(json.loads(_call(tools, "list_regressions", gap_hours=24)), list)
+
+
+def test_error_trend_counts_recent_occurrences(tmp_path):
+    import json
+
+    db = tmp_path / "recent.db"
+    now = datetime.now(UTC)
+    with ErrorsRepository(db) as repo:
+        repo.upsert(
+            fingerprint="fpR",
+            error_type="ValueError",
+            normalized_msg="boom",
+            severity="error",
+            source="api",
+            timestamp=now,
+            sample="boom",
+        )
+    tools = build_investigation_tools(db)
+    rows = json.loads(_call(tools, "error_trend", days=14))
+    assert rows  # at least today's bucket
+    assert any(r["count"] >= 1 for r in rows)
+
+
+def test_list_regressions_detects_reappearance(tmp_path):
+    import json
+
+    db = tmp_path / "regress.db"
+    now = datetime.now(UTC)
+    with ErrorsRepository(db) as repo:
+        # First seen 48h ago, then seen again now -> a regression.
+        repo.upsert(
+            fingerprint="fpG",
+            error_type="TimeoutError",
+            normalized_msg="slow",
+            severity="warning",
+            source="worker",
+            timestamp=now - timedelta(hours=48),
+            sample="slow",
+        )
+        repo.upsert(
+            fingerprint="fpG",
+            error_type="TimeoutError",
+            normalized_msg="slow",
+            severity="warning",
+            source="worker",
+            timestamp=now,
+            sample="slow again",
+        )
+    tools = build_investigation_tools(db)
+    rows = json.loads(_call(tools, "list_regressions", gap_hours=24))
+    assert any(r["fingerprint"] == "fpG" for r in rows)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -496,3 +584,38 @@ def test_cli_agent_ask_verbose_shows_steps(tmp_path, monkeypatch):
     assert "list_errors" in res.output
     assert "DONE" in res.output
     assert "Cloud provider" in res.output
+
+
+def test_cli_triage_happy_path(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    monkeypatch.setattr(
+        agent_cmd, "make_llm_client", lambda _: _CliClient(supports=True, answer="PRIORITIZED")
+    )
+    res = runner.invoke(main_app, ["agent", "triage", "--config", str(cfg_file)])
+    assert res.exit_code == 0, res.output
+    assert "PRIORITIZED" in res.output
+
+
+def test_cli_json_output_is_parseable(tmp_path, monkeypatch):
+    import json
+
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    turns = [
+        AssistantTurn(tool_calls=[ToolCall(id="c1", name="get_summary", arguments={})]),
+        AssistantTurn(text="ALL CLEAR"),
+    ]
+    monkeypatch.setattr(agent_cmd, "make_llm_client", lambda _: ScriptedClient(turns))
+    res = runner.invoke(main_app, ["agent", "triage", "--config", str(cfg_file), "--json"])
+    assert res.exit_code == 0, res.output
+    payload = json.loads(res.output.strip())
+    assert payload["answer"] == "ALL CLEAR"
+    assert payload["truncated"] is False
+    assert any(s["name"] == "get_summary" for s in payload["steps"])

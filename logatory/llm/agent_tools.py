@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..storage.errors_repo import ErrorsRepository
+from ..storage.findings_repo import FindingsRepository
 from .agent import Tool
 from .tools import ToolSpec
 
@@ -32,6 +33,26 @@ def _clamp(limit: Any, default: int = 5) -> int:
     except (TypeError, ValueError):
         return default
     return max(1, min(n, _MAX_LIMIT))
+
+
+def _clamp_window(value: Any, default: int, hi: int) -> int:
+    """Clamp a days/hours window argument to a sane bounded range."""
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(n, hi))
+
+
+def _error_summary_row(r: sqlite3.Row) -> dict[str, Any]:
+    return {
+        "fingerprint": r["fingerprint"],
+        "error_type": r["error_type"],
+        "severity": r["severity"],
+        "count": r["count"],
+        "first_seen": r["first_seen"],
+        "last_seen": r["last_seen"],
+    }
 
 
 def _dumps(obj: Any) -> str:
@@ -103,6 +124,43 @@ def build_investigation_tools(db_path: Path) -> list[Tool]:
         finally:
             conn.close()
         return _dumps([_row_to_dict(r) for r in rows])
+
+    def get_summary() -> str:
+        with ErrorsRepository(db_path) as repo:
+            errors = repo.summary()
+        with FindingsRepository(db_path) as frepo:
+            findings = frepo.summary()
+        return _dumps({"errors": errors, "findings": findings})
+
+    def list_regressions(gap_hours: int = 24) -> str:
+        gap = _clamp_window(gap_hours, default=24, hi=720)
+        with ErrorsRepository(db_path) as repo:
+            rows = repo.regression_errors(gap_hours=gap)
+        return _dumps([_error_summary_row(r) for r in rows[:_MAX_LIMIT]])
+
+    def error_trend(days: int = 14) -> str:
+        d = _clamp_window(days, default=14, hi=90)
+        with ErrorsRepository(db_path) as repo:
+            rows = repo.daily_occurrences(days=d)
+        return _dumps(rows)
+
+    def top_finding_rules(sort: str = "count", limit: int = 10) -> str:
+        n = _clamp(limit, default=10)
+        with FindingsRepository(db_path) as frepo:
+            rows = frepo.count_by_rule(limit=n, sort=sort or "count")
+        return _dumps([_row_to_dict(r) for r in rows])
+
+    def get_findings_by_rule(rule_id: str, limit: int = 5) -> str:
+        n = _clamp(limit)
+        with FindingsRepository(db_path) as frepo:
+            rows = frepo.get_by_rule(rule_id, limit=n)
+        out = []
+        for r in rows:
+            d = _row_to_dict(r)
+            if d.get("raw_event"):
+                d["raw_event"] = d["raw_event"][:_MAX_SAMPLE_CHARS]
+            out.append(d)
+        return _dumps(out)
 
     return [
         Tool(
@@ -180,5 +238,86 @@ def build_investigation_tools(db_path: Path) -> list[Tool]:
                 },
             ),
             handler=search_findings,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="get_summary",
+                description="High-level overview of the whole dataset: error-type and "
+                "occurrence totals plus severity breakdowns for errors and findings. "
+                "A good first call to orient an investigation.",
+                input_schema={"type": "object", "properties": {}, "required": []},
+            ),
+            handler=get_summary,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="list_regressions",
+                description="List errors that went quiet and then reappeared (likely "
+                "regressions) — old first_seen but a recent last_seen.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "gap_hours": {
+                            "type": "integer",
+                            "description": "Silence window in hours (default 24, max 720).",
+                        }
+                    },
+                    "required": [],
+                },
+            ),
+            handler=list_regressions,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="error_trend",
+                description="Daily error-occurrence counts over the last N days, to judge "
+                "whether overall error volume is rising, falling or spiking.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "days": {
+                            "type": "integer",
+                            "description": "How many days back (default 14, max 90).",
+                        }
+                    },
+                    "required": [],
+                },
+            ),
+            handler=error_trend,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="top_finding_rules",
+                description="The rules that fire most often (or most severely). Use to see "
+                "which detections dominate. sort=count|severity.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "sort": {
+                            "type": "string",
+                            "description": "Sort key: count (default) or severity.",
+                        },
+                        "limit": {"type": "integer", "description": "Max rows (max 10)."},
+                    },
+                    "required": [],
+                },
+            ),
+            handler=top_finding_rules,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="get_findings_by_rule",
+                description="Recent individual findings for one rule id (drill-down after "
+                "top_finding_rules or search_findings).",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "rule_id": {"type": "string", "description": "The rule id to fetch."},
+                        "limit": {"type": "integer", "description": "Max rows (max 10)."},
+                    },
+                    "required": ["rule_id"],
+                },
+            ),
+            handler=get_findings_by_rule,
         ),
     ]

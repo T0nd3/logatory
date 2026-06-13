@@ -834,10 +834,13 @@ it decides which read-only database tools to call, reads the results, and keeps
 going until it can answer — automated triage instead of a one-off prompt.
 
 ```bash
-logatory agent [investigate|ask]
+logatory agent [investigate|ask|triage]
 ```
 
 ```bash
+# Auto-triage the whole dataset: survey errors + findings, prioritized report
+logatory agent triage
+
 # Triage a single tracked error end-to-end (root cause + next steps)
 logatory agent investigate abc123def456
 
@@ -846,11 +849,15 @@ logatory agent ask "Why did the API start failing this afternoon?"
 
 # Show every tool call and its result; bound the loop length
 logatory agent ask "What is the most frequent critical error?" --verbose --max-steps 6
+
+# Machine-readable output for CI / automation
+logatory agent triage --json
 ```
 
-The agent only ever **reads** your local data via bounded tools (error records,
-recent occurrences with stack traces, related errors, matching findings), so a
-run can never mutate state.
+The agent only ever **reads** your local data via bounded tools, so a run can
+never mutate state. Available tools: `get_summary`, `list_errors`, `get_error`,
+`get_occurrences` (stack traces), `error_trend`, `list_regressions`,
+`top_finding_rules`, `get_findings_by_rule` and `search_findings`.
 
 > **Requires a tool-capable provider.** Use `claude` or any OpenAI-compatible
 > endpoint (`provider: openai_compat` — this also covers a local Ollama via
