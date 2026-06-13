@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Performance benchmark:** `scripts/benchmark.py` measures end-to-end pipeline
+  throughput (parse + PII-redact + rule engine) over synthetic log lines and
+  reports lines/second — handy for catching performance regressions. The core
+  `run_benchmark()` is importable and covered by a light smoke test.
 - **Plugin docs & example:** a full plugin guide in `docs/PLUGINS.md` and an
   expanded `plugins/example_plugin.py` that demonstrates all four contribution
   types — a detection rule, a PII pattern, a custom log-format parser and a

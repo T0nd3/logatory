@@ -34,6 +34,13 @@ ruff format --check .   # formatting
 `ruff format .` (without `--check`) applies the formatting. All ruff
 configuration lives in `pyproject.toml`.
 
+To check pipeline throughput (parse + PII-redact + rule engine) and catch
+performance regressions:
+
+```bash
+python scripts/benchmark.py --lines 100000
+```
+
 ### Known test warning
 
 `pytest` emits one upstream deprecation warning:
