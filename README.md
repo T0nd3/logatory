@@ -566,6 +566,8 @@ alerts:
   - type: webhook
     url: https://hooks.example.com/security
     min_severity: medium
+    escalate_count: 5              # escalation: only alert once this finding
+    escalate_window: 120           # fires 5× within 120s (tames noisy rules)
 
   - type: email
     min_severity: critical
@@ -593,6 +595,14 @@ it is set, repeats of the *same* finding (identical `rule_id` + `source`) are
 suppressed until the window elapses. `0` (the default) delivers every match. Only
 successful deliveries arm the timer, so a channel that was down still gets the
 next attempt.
+
+Set per-channel **escalation** (`escalate_count` + `escalate_window` seconds) to
+alert only on a *burst*: the channel stays silent until the same finding occurs
+`escalate_count` times within `escalate_window` seconds, then fires once and
+resets. Both must be set (count > 1 and window > 0) to take effect — ideal for
+flaky rules where a single hit is noise but a rapid cluster is real. Escalation
+and `cooldown` compose: a finding must first clear the burst threshold, then it
+is still subject to the cooldown.
 
 The legacy `--alert-webhook` flag still works and fires **in addition** to any
 configured channels.

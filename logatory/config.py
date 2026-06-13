@@ -64,6 +64,11 @@ class AlertChannel:
     # Per-channel throttle: suppress repeats of the same finding (rule_id+source)
     # for this many seconds.  0 disables throttling (every match is delivered).
     cooldown: int = 0
+    # Per-channel escalation: only fire after the same finding occurs
+    # ``escalate_count`` times within ``escalate_window`` seconds.  Both must be
+    # set (count > 1 and window > 0) to take effect; otherwise fire immediately.
+    escalate_count: int = 0
+    escalate_window: int = 0
     # webhook / slack / discord
     url: str | None = None
     # email (SMTP)
@@ -84,6 +89,8 @@ class AlertChannel:
             type=str(data.get("type", "")).strip().lower(),
             min_severity=str(data.get("min_severity", "high")).strip().lower(),
             cooldown=int(data.get("cooldown", 0)),
+            escalate_count=int(data.get("escalate_count", 0)),
+            escalate_window=int(data.get("escalate_window", 0)),
             url=expand(data.get("url")),
             smtp_host=data.get("smtp_host"),
             smtp_port=int(data.get("smtp_port", 587)),

@@ -21,6 +21,8 @@ api_token: ""
 # secrets in the environment. Verify with: logatory alerts test
 # Optional 'cooldown' (seconds) throttles repeats of the same finding
 # (rule_id + source) per channel — 0 (default) delivers every match.
+# Optional escalation ('escalate_count' + 'escalate_window' seconds) only fires
+# after the same finding occurs N times within the window — good for noisy rules.
 # alerts:
 #   - type: slack
 #     url: ${SLACK_WEBHOOK_URL}
@@ -29,6 +31,8 @@ api_token: ""
 #   - type: webhook
 #     url: https://hooks.example.com/security
 #     min_severity: medium
+#     escalate_count: 5     # only alert once the same finding
+#     escalate_window: 120  # fires 5 times within 120 seconds
 #   - type: email
 #     min_severity: critical
 #     smtp_host: smtp.example.com

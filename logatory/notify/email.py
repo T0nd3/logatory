@@ -32,8 +32,15 @@ class EmailNotifier(Notifier):
         sender: str | None = None,
         min_severity: str = "high",
         cooldown: float = 0,
+        escalate_count: int = 0,
+        escalate_window: float = 0,
     ) -> None:
-        super().__init__(min_severity=min_severity, cooldown=cooldown)
+        super().__init__(
+            min_severity=min_severity,
+            cooldown=cooldown,
+            escalate_count=escalate_count,
+            escalate_window=escalate_window,
+        )
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
         self.smtp_user = smtp_user

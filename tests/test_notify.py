@@ -315,6 +315,93 @@ class TestThrottle:
 
 
 # ---------------------------------------------------------------------------
+# Escalation (N-in-M threshold)
+# ---------------------------------------------------------------------------
+
+
+class TestEscalation:
+    def test_disabled_by_default_fires_immediately(self):
+        n = WebhookNotifier(url="http://x", min_severity="low")
+        assert n.escalation_enabled is False
+        assert n.should_escalate(_finding(), now=0.0) is True
+
+    def test_enabled_requires_count_and_window(self):
+        assert WebhookNotifier(
+            url="http://x", escalate_count=3, escalate_window=60
+        ).escalation_enabled
+        # count <= 1 or window <= 0 means escalation is off
+        assert not WebhookNotifier(
+            url="http://x", escalate_count=1, escalate_window=60
+        ).escalation_enabled
+        assert not WebhookNotifier(
+            url="http://x", escalate_count=3, escalate_window=0
+        ).escalation_enabled
+
+    def test_fires_only_on_nth_occurrence(self):
+        n = WebhookNotifier(
+            url="http://x", min_severity="low", escalate_count=3, escalate_window=60
+        )
+        assert n.should_escalate(_finding(), now=0.0) is False  # 1st
+        assert n.should_escalate(_finding(), now=10.0) is False  # 2nd
+        assert n.should_escalate(_finding(), now=20.0) is True  # 3rd → fire
+
+    def test_resets_after_firing(self):
+        n = WebhookNotifier(
+            url="http://x", min_severity="low", escalate_count=2, escalate_window=60
+        )
+        assert n.should_escalate(_finding(), now=0.0) is False
+        assert n.should_escalate(_finding(), now=1.0) is True  # 2nd fires
+        # counter reset → needs a fresh pair
+        assert n.should_escalate(_finding(), now=2.0) is False
+        assert n.should_escalate(_finding(), now=3.0) is True
+
+    def test_occurrences_outside_window_are_pruned(self):
+        n = WebhookNotifier(
+            url="http://x", min_severity="low", escalate_count=2, escalate_window=60
+        )
+        assert n.should_escalate(_finding(), now=0.0) is False
+        # 100s later the first occurrence has aged out of the 60s window
+        assert n.should_escalate(_finding(), now=100.0) is False
+
+    def test_distinct_findings_tracked_separately(self):
+        n = WebhookNotifier(
+            url="http://x", min_severity="low", escalate_count=2, escalate_window=60
+        )
+        a = Finding(
+            rule_id="A",
+            severity=FindingSeverity.HIGH,
+            message="m",
+            source="s",
+            timestamp=datetime(2026, 6, 13, tzinfo=UTC),
+        )
+        b = Finding(
+            rule_id="B",
+            severity=FindingSeverity.HIGH,
+            message="m",
+            source="s",
+            timestamp=datetime(2026, 6, 13, tzinfo=UTC),
+        )
+        assert n.should_escalate(a, now=0.0) is False
+        assert n.should_escalate(b, now=0.0) is False  # b's own counter
+        assert n.should_escalate(a, now=1.0) is True  # a hit twice
+
+    def test_dispatch_holds_until_threshold(self, capture_post, monkeypatch):
+        clock = {"t": 0.0}
+        monkeypatch.setattr("time.monotonic", lambda: clock["t"])
+        notifiers = [
+            WebhookNotifier(
+                url="http://a", min_severity="low", escalate_count=3, escalate_window=60
+            )
+        ]
+        assert dispatch(notifiers, _finding()) == 0  # 1st suppressed
+        clock["t"] = 1.0
+        assert dispatch(notifiers, _finding()) == 0  # 2nd suppressed
+        clock["t"] = 2.0
+        assert dispatch(notifiers, _finding()) == 1  # 3rd within window → fires
+        assert len(capture_post) == 1
+
+
+# ---------------------------------------------------------------------------
 # Config loading
 # ---------------------------------------------------------------------------
 
@@ -375,6 +462,32 @@ class TestAlertChannelConfig:
     def test_build_notifier_forwards_cooldown(self):
         n = build_notifier(AlertChannel("webhook", url="http://x", cooldown=120))
         assert n.cooldown == 120
+
+    def test_escalation_defaults_to_zero(self):
+        ch = AlertChannel.from_dict({"type": "slack", "url": "http://x"})
+        assert ch.escalate_count == 0
+        assert ch.escalate_window == 0
+
+    def test_escalation_parsed(self):
+        ch = AlertChannel.from_dict(
+            {"type": "slack", "url": "http://x", "escalate_count": 5, "escalate_window": 300}
+        )
+        assert ch.escalate_count == 5
+        assert ch.escalate_window == 300
+
+    def test_build_notifier_forwards_escalation(self):
+        n = build_notifier(
+            AlertChannel(
+                "email",
+                smtp_host="h",
+                recipients=["a@b.de"],
+                escalate_count=4,
+                escalate_window=120,
+            )
+        )
+        assert n.escalate_count == 4
+        assert n.escalate_window == 120
+        assert n.escalation_enabled is True
 
 
 # ---------------------------------------------------------------------------

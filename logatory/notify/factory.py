@@ -30,7 +30,11 @@ def build_notifier(channel: AlertChannel) -> Notifier:
         if not channel.url:
             raise ValueError(f"Alert channel '{t}' requires a 'url'.")
         return _URL_TYPES[t](
-            url=channel.url, min_severity=channel.min_severity, cooldown=channel.cooldown
+            url=channel.url,
+            min_severity=channel.min_severity,
+            cooldown=channel.cooldown,
+            escalate_count=channel.escalate_count,
+            escalate_window=channel.escalate_window,
         )
     if t == "email":
         if not channel.smtp_host or not channel.recipients:
@@ -45,6 +49,8 @@ def build_notifier(channel: AlertChannel) -> Notifier:
             recipients=channel.recipients,
             min_severity=channel.min_severity,
             cooldown=channel.cooldown,
+            escalate_count=channel.escalate_count,
+            escalate_window=channel.escalate_window,
         )
     raise ValueError(f"Unknown alert channel type '{t}'. Valid: webhook, slack, discord, email.")
 
@@ -69,13 +75,21 @@ def build_notifiers(
 def dispatch(notifiers: Sequence[Notifier], finding: Finding) -> int:
     """Send *finding* to every notifier that wants it. Return the number delivered.
 
-    A channel with a ``cooldown`` suppresses repeats of the same finding
-    (identical ``rule_id``+``source``) within its window; only successful
-    deliveries reset the timer, so a failed send is retried next time.
+    Each channel applies, in order: severity gate (``matches``), escalation
+    (``should_escalate`` — only fire after N occurrences within a window) and
+    throttling (``is_throttled`` — suppress repeats of the same finding within a
+    cooldown). Only successful deliveries reset the cooldown timer, so a failed
+    send is retried next time.
     """
     sent = 0
     for n in notifiers:
-        if n.matches(finding) and not n.is_throttled(finding) and n.send(finding):
+        if not n.matches(finding):
+            continue
+        if not n.should_escalate(finding):
+            continue
+        if n.is_throttled(finding):
+            continue
+        if n.send(finding):
             n.record_sent(finding)
             sent += 1
     return sent

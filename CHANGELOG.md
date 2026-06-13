@@ -41,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Alert throttling:** an optional per-channel `cooldown` (seconds) suppresses
   repeats of the same finding (`rule_id` + `source`) within the window, taming
   alert storms. Only successful deliveries arm the timer.
+- **Alert escalation:** optional per-channel `escalate_count` + `escalate_window`
+  (seconds) hold an alert until the same finding occurs N times within the
+  window, then fire once and reset — ideal for noisy rules where a single hit is
+  noise but a rapid burst is real. Composes with `cooldown`.
 - This changelog.
 - CI test matrix now covers Python 3.13 and 3.14 (in addition to 3.11 and 3.12)
   on Linux, Windows and macOS; added the matching trove classifiers.

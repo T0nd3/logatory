@@ -78,10 +78,20 @@ class Notifier(ABC):
 
     name: str = "notifier"
 
-    def __init__(self, *, min_severity: str = "high", cooldown: float = 0) -> None:
+    def __init__(
+        self,
+        *,
+        min_severity: str = "high",
+        cooldown: float = 0,
+        escalate_count: int = 0,
+        escalate_window: float = 0,
+    ) -> None:
         self.min_severity = min_severity
         self.cooldown = cooldown
+        self.escalate_count = escalate_count
+        self.escalate_window = escalate_window
         self._last_sent: dict[str, float] = {}
+        self._occurrences: dict[str, list[float]] = {}
 
     def matches(self, finding: Finding) -> bool:
         """True if *finding* is severe enough for this channel."""
@@ -91,6 +101,32 @@ class Notifier(ABC):
     def _dedup_key(finding: Finding) -> str:
         """Identity used for throttling: the same rule firing on the same source."""
         return f"{finding.rule_id}\x00{finding.source}"
+
+    @property
+    def escalation_enabled(self) -> bool:
+        """True if this channel only fires after a burst of repeats."""
+        return self.escalate_count > 1 and self.escalate_window > 0
+
+    def should_escalate(self, finding: Finding, *, now: float | None = None) -> bool:
+        """Record this occurrence and report whether the escalation threshold is met.
+
+        With escalation disabled this is always ``True`` (fire immediately).
+        Otherwise a finding only fires once it has occurred ``escalate_count``
+        times within ``escalate_window`` seconds; the per-key counter then resets
+        so it takes another full burst to fire again.
+        """
+        if not self.escalation_enabled:
+            return True
+        now = time.monotonic() if now is None else now
+        key = self._dedup_key(finding)
+        cutoff = now - self.escalate_window
+        kept = [t for t in self._occurrences.get(key, []) if t >= cutoff]
+        kept.append(now)
+        if len(kept) >= self.escalate_count:
+            self._occurrences[key] = []
+            return True
+        self._occurrences[key] = kept
+        return False
 
     def is_throttled(self, finding: Finding, *, now: float | None = None) -> bool:
         """True if an identical finding was delivered within ``cooldown`` seconds."""
