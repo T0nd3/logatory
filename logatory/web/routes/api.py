@@ -248,16 +248,16 @@ async def api_upload(
             )
 
             if rule_engine:
-                for f in rule_engine.process(event):
-                    findings_out.append(
-                        {
-                            "rule_id": f.rule_id,
-                            "severity": f.severity.value,
-                            "message": f.message,
-                            "source": f.source,
-                            "timestamp": f.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
-                        }
-                    )
+                findings_out.extend(
+                    {
+                        "rule_id": f.rule_id,
+                        "severity": f.severity.value,
+                        "message": f.message,
+                        "source": f.source,
+                        "timestamp": f.timestamp.strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                    for f in rule_engine.process(event)
+                )
 
         # Sort findings: critical → high → medium → low (unknowns last)
         from logatory.models import finding_severity_level

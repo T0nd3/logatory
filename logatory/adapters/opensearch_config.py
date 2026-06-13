@@ -91,8 +91,7 @@ def build_query_dsl(query: OpenSearchQuery) -> dict:
         must.append({"range": {ts_field: range_clause}})
 
     # Exact-value filters
-    for f in query.filters:
-        must.append({"term": {f["field"]: f["value"]}})
+    must.extend({"term": {f["field"]: f["value"]}} for f in query.filters)
 
     query_clause: dict = {"match_all": {}} if not must else {"bool": {"must": must}}
 

@@ -163,7 +163,7 @@ class Config:
 
         data: dict = {}
         if path and path.exists():
-            with open(path) as f:
+            with path.open() as f:
                 data = yaml.safe_load(f) or {}
 
         llm_data = data.get("llm", {})

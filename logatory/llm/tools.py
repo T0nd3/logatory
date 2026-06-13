@@ -113,10 +113,10 @@ def messages_to_anthropic(messages: list[Msg]) -> list[dict[str, Any]]:
             content: list[dict[str, Any]] = []
             if m.text:
                 content.append({"type": "text", "text": m.text})
-            for c in m.tool_calls:
-                content.append(
-                    {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
-                )
+            content.extend(
+                {"type": "tool_use", "id": c.id, "name": c.name, "input": c.arguments}
+                for c in m.tool_calls
+            )
             out.append({"role": "assistant", "content": content})
             continue
         out.append({"role": m.role, "content": m.text})
@@ -159,8 +159,10 @@ def messages_to_openai(messages: list[Msg], system: str | None = None) -> list[d
         out.append({"role": "system", "content": system})
     for m in messages:
         if m.tool_results:
-            for r in m.tool_results:
-                out.append({"role": "tool", "tool_call_id": r.id, "content": r.content})
+            out.extend(
+                {"role": "tool", "tool_call_id": r.id, "content": r.content}
+                for r in m.tool_results
+            )
             continue
         if m.role == "assistant" and m.tool_calls:
             out.append(
@@ -215,8 +217,9 @@ def messages_to_ollama(messages: list[Msg], system: str | None = None) -> list[d
         out.append({"role": "system", "content": system})
     for m in messages:
         if m.tool_results:
-            for r in m.tool_results:
-                out.append({"role": "tool", "content": r.content, "tool_name": r.name})
+            out.extend(
+                {"role": "tool", "content": r.content, "tool_name": r.name} for r in m.tool_results
+            )
             continue
         if m.role == "assistant" and m.tool_calls:
             out.append(

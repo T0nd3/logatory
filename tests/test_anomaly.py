@@ -70,20 +70,19 @@ def _make_baseline(
     import random
 
     random.seed(42)
-    fds = []
-    for _ in range(n):
-        fds.append(
-            {
-                "event_count": random.gauss(event_count_mean, event_count_std),
-                "error_rate": max(0.0, random.gauss(error_rate_mean, error_rate_std)),
-                "warning_rate": 0.05,
-                "source_count": 1.0,
-                "http_5xx_count": 0.0,
-                "http_4xx_count": 3.0,
-                "avg_bytes": 1000.0,
-                "path_entropy": 2.0,
-            }
-        )
+    fds = [
+        {
+            "event_count": random.gauss(event_count_mean, event_count_std),
+            "error_rate": max(0.0, random.gauss(error_rate_mean, error_rate_std)),
+            "warning_rate": 0.05,
+            "source_count": 1.0,
+            "http_5xx_count": 0.0,
+            "http_4xx_count": 3.0,
+            "avg_bytes": 1000.0,
+            "path_entropy": 2.0,
+        }
+        for _ in range(n)
+    ]
     return compute_stats(fds, "test")
 
 

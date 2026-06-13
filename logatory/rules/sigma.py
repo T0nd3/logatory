@@ -74,7 +74,7 @@ class SigmaConversionError(Exception):
 
 
 def load_sigma_file(path: Path) -> Rule:
-    with open(path, encoding="utf-8") as f:
+    with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return _convert(data, str(path))
 

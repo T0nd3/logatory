@@ -93,6 +93,13 @@ select = [
     "C4",   # flake8-comprehensions
     "SIM",  # flake8-simplify
     "RUF",  # ruff-specific
+    "PERF", # perflint — avoidable performance traps
+    "PTH",  # flake8-use-pathlib — prefer pathlib over os.path/open
+    "PIE",  # flake8-pie — misc lints
+    "FLY",  # flynt — prefer f-strings over str.join
+    "RET",  # flake8-return — cleaner return/raise flow
+    "RSE",  # flake8-raise — raise without redundant parens
+    "LOG",  # flake8-logging — correct logging usage
 ]
 ignore = [
     "E501",   # line too long — formatter handles this

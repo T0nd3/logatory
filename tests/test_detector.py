@@ -7,7 +7,7 @@ DATA_DIR = Path(__file__).parent / "data"
 
 def _sample(filename: str, n: int = 5) -> list[str]:
     lines = []
-    with open(DATA_DIR / filename) as f:
+    with (DATA_DIR / filename).open() as f:
         for line in f:
             if line.strip():
                 lines.append(line)

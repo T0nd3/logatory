@@ -56,7 +56,7 @@ class TailAdapter(SourceAdapter):
                 # ── open / reopen ──────────────────────────────────────
                 if f is None:
                     try:
-                        f = open(self.path, encoding="utf-8", errors="replace")
+                        f = self.path.open(encoding="utf-8", errors="replace")
                         if first_open and not self.from_start:
                             f.seek(0, 2)  # seek to end on very first open
                         first_open = False
@@ -102,7 +102,7 @@ class TailAdapter(SourceAdapter):
         """Read the first few lines to detect the log format."""
         sample: list[str] = []
         try:
-            with open(self.path, encoding="utf-8", errors="replace") as f:
+            with self.path.open(encoding="utf-8", errors="replace") as f:
                 for i, line in enumerate(f):
                     if i >= _SAMPLE_LINES:
                         break

@@ -44,15 +44,14 @@ def _load_one(data: dict, source_file: str) -> Rule:
     raw_formats = data.get("logsource", {}).get("formats")
     logsource_formats = list(raw_formats) if raw_formats else None
 
-    match_conditions: list[MatchCondition] = []
-    for cond in data.get("detection", {}).get("match", []):
-        match_conditions.append(
-            MatchCondition(
-                field=cond["field"],
-                op=cond.get("op", "eq"),
-                value=str(cond["value"]),
-            )
+    match_conditions: list[MatchCondition] = [
+        MatchCondition(
+            field=cond["field"],
+            op=cond.get("op", "eq"),
+            value=str(cond["value"]),
         )
+        for cond in data.get("detection", {}).get("match", [])
+    ]
 
     aggregate: AggregateCondition | None = None
     agg_data = data.get("detection", {}).get("aggregate")
@@ -85,7 +84,7 @@ def rule_from_dict(data: dict, source_file: str = "<dict>") -> Rule:
 
 
 def load_rule_file(path: Path) -> Rule:
-    with open(path, encoding="utf-8") as f:
+    with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f)
     return _load_one(data, str(path))
 
@@ -104,7 +103,7 @@ def validate_rule_file(path: Path) -> list[str]:
     """Return a list of validation errors (empty = valid)."""
     errors: list[str] = []
     try:
-        with open(path, encoding="utf-8") as f:
+        with path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         return [f"YAML parse error: {e}"]

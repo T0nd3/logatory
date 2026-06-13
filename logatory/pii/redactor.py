@@ -45,16 +45,16 @@ class PIIRedactor:
     ) -> PIIRedactor:
         extra: list[PIIPattern] = []
         if rules_path.exists():
-            with open(rules_path) as f:
+            with rules_path.open() as f:
                 data = yaml.safe_load(f) or {}
-            for rule in data.get("patterns", []):
-                extra.append(
-                    PIIPattern(
-                        name=rule["name"],
-                        pattern=re.compile(rule["pattern"]),
-                        prefix=rule.get("prefix", rule["name"]),
-                    )
+            extra.extend(
+                PIIPattern(
+                    name=rule["name"],
+                    pattern=re.compile(rule["pattern"]),
+                    prefix=rule.get("prefix", rule["name"]),
                 )
+                for rule in data.get("patterns", [])
+            )
         if additional:
             extra.extend(additional)
         return cls(salt=salt, extra_patterns=extra or None, mode=mode)

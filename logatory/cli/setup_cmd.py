@@ -170,7 +170,7 @@ def doctor(
         )
 
     # ── Database path ──────────────────────────────────────────────────────
-    parent = cfg.db_path.parent if str(cfg.db_path.parent) else Path(".")
+    parent = cfg.db_path.parent if str(cfg.db_path.parent) else Path()
     if not parent.exists():
         rep.fail("Database", f"directory {parent} does not exist")
     elif not os.access(parent, os.W_OK):

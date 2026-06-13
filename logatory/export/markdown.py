@@ -25,8 +25,7 @@ def _md_table(headers: list[str], rows: list[list[str]]) -> str:
         "| " + " | ".join(headers) + " |",
         "| " + " | ".join(sep) + " |",
     ]
-    for row in rows:
-        lines.append("| " + " | ".join(str(c) for c in row) + " |")
+    lines.extend("| " + " | ".join(str(c) for c in row) + " |" for row in rows)
     return "\n".join(lines)
 
 

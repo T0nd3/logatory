@@ -126,11 +126,11 @@ def summarize_prompt(
         "",
         f"TOP ERRORS (last {since}, sorted by frequency):",
     ]
-    for row in error_rows[:_MAX_CONTEXT_ITEMS]:
-        lines.append(
-            f"  [{row.get('count', 0):>5}x] [{row.get('severity', '?').upper():<8}] "
-            f"{row.get('error_type', '?')} — {row.get('normalized_msg', '')[:_MAX_ITEM_CHARS]}"
-        )
+    lines.extend(
+        f"  [{row.get('count', 0):>5}x] [{row.get('severity', '?').upper():<8}] "
+        f"{row.get('error_type', '?')} — {row.get('normalized_msg', '')[:_MAX_ITEM_CHARS]}"
+        for row in error_rows[:_MAX_CONTEXT_ITEMS]
+    )
 
     lines += [
         "",
@@ -182,17 +182,15 @@ def ask_prompt(question: str, context_chunks: list[str]) -> str:
 def classify_events_prompt(log_lines: list[str]) -> str:
     """Ask the LLM to classify raw log lines by severity."""
     numbered = "\n".join(f"  {i + 1:>3}. {line[:200]}" for i, line in enumerate(log_lines[:30]))
-    return "\n".join(
-        [
-            "You are a log analysis expert.",
-            "Classify each log line by severity. Use: DEBUG, INFO, WARNING, ERROR, CRITICAL.",
-            "",
-            "LOG LINES:",
-            numbered,
-            "",
-            "For each line respond with:",
-            "  LINE <N>: [SEVERITY] <one-sentence description>",
-            "",
-            "Focus on errors, warnings, and security-relevant events. Skip purely informational lines.",
-        ]
+    return (
+        "You are a log analysis expert.\n"
+        "Classify each log line by severity. Use: DEBUG, INFO, WARNING, ERROR, CRITICAL.\n"
+        "\n"
+        "LOG LINES:\n"
+        f"{numbered}\n"
+        "\n"
+        "For each line respond with:\n"
+        "  LINE <N>: [SEVERITY] <one-sentence description>\n"
+        "\n"
+        "Focus on errors, warnings, and security-relevant events. Skip purely informational lines."
     )

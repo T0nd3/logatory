@@ -98,5 +98,3 @@ class SyslogParser(BaseParser):
 
 class AuthLogParser(SyslogParser):
     """auth.log uses the same syslog format but focuses on auth processes."""
-
-    pass

@@ -47,7 +47,7 @@ def _finding(sev: FindingSeverity = FindingSeverity.HIGH) -> Finding:
 
 def _write(path: Path, text: str, append: bool = False) -> None:
     mode = "a" if append else "w"
-    with open(path, mode, encoding="utf-8") as f:
+    with path.open(mode, encoding="utf-8") as f:
         f.write(text)
 
 

@@ -546,17 +546,16 @@ def rules_validate(
             for err in errors:
                 typer.echo(typer.style(f"  ERROR  {err}", fg=typer.colors.RED))
             raise typer.Exit(1)
-        else:
-            import yaml
+        import yaml
 
-            with open(file) as f:
-                data = yaml.safe_load(f)
-            typer.echo(
-                typer.style(
-                    f"OK  [{data.get('id', '?')}] {data.get('title', '?')}",
-                    fg=typer.colors.GREEN,
-                )
+        with file.open() as f:
+            data = yaml.safe_load(f)
+        typer.echo(
+            typer.style(
+                f"OK  [{data.get('id', '?')}] {data.get('title', '?')}",
+                fg=typer.colors.GREEN,
             )
+        )
 
 
 # ---------------------------------------------------------------------------
