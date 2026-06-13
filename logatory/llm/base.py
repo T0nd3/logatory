@@ -10,12 +10,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .tools import AssistantTurn, Msg, ToolSpec
 
 
 class AbstractLLMClient(ABC):
     # Subclasses override these class-level attributes
     is_cloud: bool = False  # True → data leaves the machine
     provider_name: str = "unknown"
+    supports_tools: bool = False  # True → chat_with_tools is implemented
 
     # ------------------------------------------------------------------
     # Required
@@ -52,3 +57,19 @@ class AbstractLLMClient(ABC):
     def list_models(self) -> list[str]:
         """Return names of locally/remotely available models, or []."""
         return []
+
+    def chat_with_tools(
+        self,
+        messages: list[Msg],
+        tools: list[ToolSpec],
+        system: str = "",
+    ) -> AssistantTurn:
+        """Run one tool-enabled turn and return the model's response.
+
+        Providers that support function/tool calling override this and set
+        ``supports_tools = True``.  The default raises so the agent layer can
+        fail fast with a helpful message.
+        """
+        raise NotImplementedError(
+            f"Provider '{self.provider_name}' does not support tool use (agent mode)."
+        )

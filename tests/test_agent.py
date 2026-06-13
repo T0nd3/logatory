@@ -1,0 +1,498 @@
+"""Tests for the tool-using agent layer.
+
+Covers the provider-neutral tool data model and its converters, the agent loop
+(tool execution, truncation, error handling), the read-only investigation tools
+against a temp SQLite DB, and the `logatory agent` CLI commands. Everything runs
+offline: LLM clients are replaced by scripted fakes.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from typer.testing import CliRunner
+
+from logatory.cli import agent_cmd
+from logatory.cli.main import app as main_app
+from logatory.llm.agent import Agent
+from logatory.llm.agent_tools import build_investigation_tools
+from logatory.llm.base import AbstractLLMClient
+from logatory.llm.tools import (
+    AssistantTurn,
+    Msg,
+    ToolCall,
+    ToolResult,
+    ToolSpec,
+    messages_to_anthropic,
+    messages_to_openai,
+    parse_anthropic_response,
+    parse_openai_message,
+)
+from logatory.models import Finding, FindingSeverity
+from logatory.storage.errors_repo import ErrorsRepository
+from logatory.storage.findings_repo import FindingsRepository
+
+runner = CliRunner()
+_T0 = datetime(2024, 3, 15, 10, 0, 0, tzinfo=UTC)
+
+
+# ---------------------------------------------------------------------------
+# Fake clients
+# ---------------------------------------------------------------------------
+
+
+class ScriptedClient(AbstractLLMClient):
+    """Replays a fixed sequence of AssistantTurns, one per chat_with_tools call."""
+
+    supports_tools = True
+    is_cloud = False
+    provider_name = "scripted"
+
+    def __init__(self, turns: list[AssistantTurn]) -> None:
+        self._turns = list(turns)
+        self.calls: list[tuple[list[Msg], list[ToolSpec]]] = []
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate(self, prompt, stream=True):  # pragma: no cover - unused
+        yield ""
+
+    def chat_with_tools(self, messages, tools, system=""):
+        self.calls.append((list(messages), list(tools)))
+        if self._turns:
+            return self._turns.pop(0)
+        return AssistantTurn(text="(exhausted)")
+
+
+class LoopingClient(AbstractLLMClient):
+    """Always asks for a tool while tools are offered; answers when they aren't.
+
+    This forces the agent to hit its step budget and take the forced-final path.
+    """
+
+    supports_tools = True
+    is_cloud = False
+    provider_name = "looping"
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate(self, prompt, stream=True):  # pragma: no cover - unused
+        yield ""
+
+    def chat_with_tools(self, messages, tools, system=""):
+        if tools:
+            return AssistantTurn(tool_calls=[ToolCall(id="x", name="noop", arguments={})])
+        return AssistantTurn(text="forced final answer")
+
+
+def _spec(name: str = "noop") -> ToolSpec:
+    return ToolSpec(name=name, description="d", input_schema={"type": "object", "properties": {}})
+
+
+def _tool(name: str, handler):
+    from logatory.llm.agent import Tool
+
+    return Tool(spec=_spec(name), handler=handler)
+
+
+# ---------------------------------------------------------------------------
+# Agent loop
+# ---------------------------------------------------------------------------
+
+
+def test_agent_executes_tool_then_answers():
+    seen: dict = {}
+
+    def handler(**kwargs):
+        seen.update(kwargs)
+        return "tool-output"
+
+    client = ScriptedClient(
+        [
+            AssistantTurn(tool_calls=[ToolCall(id="c1", name="lookup", arguments={"q": "x"})]),
+            AssistantTurn(text="final answer"),
+        ]
+    )
+    agent = Agent(client, [_tool("lookup", handler)], system="sys", max_iterations=8)
+    result = agent.run("do it")
+
+    assert result.answer == "final answer"
+    assert result.truncated is False
+    assert result.iterations == 2
+    assert seen == {"q": "x"}
+    # one tool_call step + one answer step
+    kinds = [s.kind for s in result.steps]
+    assert kinds == ["tool_call", "answer"]
+    assert result.steps[0].result == "tool-output"
+    # the system prompt is forwarded to the client
+    assert client.calls[0][0][0].text == "do it"
+
+
+def test_agent_truncates_at_step_budget():
+    agent = Agent(LoopingClient(), [_tool("noop", lambda **_: "x")], max_iterations=3)
+    result = agent.run("loop forever")
+
+    assert result.truncated is True
+    assert result.iterations == 3
+    assert result.answer == "forced final answer"
+    # 3 tool calls + final forced answer
+    assert sum(s.kind == "tool_call" for s in result.steps) == 3
+
+
+def test_agent_handles_unknown_tool():
+    client = ScriptedClient(
+        [
+            AssistantTurn(tool_calls=[ToolCall(id="c1", name="ghost", arguments={})]),
+            AssistantTurn(text="done"),
+        ]
+    )
+    agent = Agent(client, [_tool("real", lambda **_: "ok")])
+    result = agent.run("q")
+    assert "unknown tool 'ghost'" in result.steps[0].result
+
+
+def test_agent_handles_tool_exception():
+    def boom(**_):
+        raise ValueError("kaboom")
+
+    client = ScriptedClient(
+        [
+            AssistantTurn(tool_calls=[ToolCall(id="c1", name="boom", arguments={})]),
+            AssistantTurn(text="recovered"),
+        ]
+    )
+    agent = Agent(client, [_tool("boom", boom)])
+    result = agent.run("q")
+    assert "tool 'boom' failed: kaboom" in result.steps[0].result
+    assert result.answer == "recovered"
+
+
+def test_agent_max_iterations_floored_to_one():
+    agent = Agent(ScriptedClient([]), [], max_iterations=0)
+    assert agent.max_iterations == 1
+
+
+# ---------------------------------------------------------------------------
+# Converters: OpenAI
+# ---------------------------------------------------------------------------
+
+
+def test_messages_to_openai_roundtrip_shapes():
+    msgs = [
+        Msg(role="user", text="hi"),
+        Msg(
+            role="assistant",
+            text="",
+            tool_calls=[ToolCall(id="c1", name="lookup", arguments={"q": "x"})],
+        ),
+        Msg(role="user", tool_results=[ToolResult(id="c1", name="lookup", content="res")]),
+    ]
+    out = messages_to_openai(msgs, system="be terse")
+    assert out[0] == {"role": "system", "content": "be terse"}
+    assert out[1] == {"role": "user", "content": "hi"}
+    assert out[2]["role"] == "assistant"
+    assert out[2]["content"] is None
+    tc = out[2]["tool_calls"][0]
+    assert tc["id"] == "c1"
+    assert tc["function"]["name"] == "lookup"
+    assert tc["function"]["arguments"] == '{"q": "x"}'
+    assert out[3] == {"role": "tool", "tool_call_id": "c1", "content": "res"}
+
+
+def test_parse_openai_message_with_tool_calls():
+    message = {
+        "content": None,
+        "tool_calls": [
+            {"id": "c9", "function": {"name": "get_error", "arguments": '{"fingerprint": "ab"}'}}
+        ],
+    }
+    turn = parse_openai_message(message)
+    assert turn.wants_tools
+    assert turn.tool_calls[0].name == "get_error"
+    assert turn.tool_calls[0].arguments == {"fingerprint": "ab"}
+
+
+def test_parse_openai_message_bad_arguments_fall_back_to_empty():
+    message = {
+        "content": "",
+        "tool_calls": [{"id": "c1", "function": {"name": "x", "arguments": "not-json"}}],
+    }
+    turn = parse_openai_message(message)
+    assert turn.tool_calls[0].arguments == {}
+
+
+def test_parse_openai_message_plain_text():
+    turn = parse_openai_message({"content": "just text"})
+    assert turn.text == "just text"
+    assert not turn.wants_tools
+
+
+# ---------------------------------------------------------------------------
+# Converters: Anthropic
+# ---------------------------------------------------------------------------
+
+
+def test_messages_to_anthropic_shapes():
+    msgs = [
+        Msg(role="user", text="hi"),
+        Msg(
+            role="assistant",
+            text="thinking",
+            tool_calls=[ToolCall(id="c1", name="lookup", arguments={"q": "x"})],
+        ),
+        Msg(role="user", tool_results=[ToolResult(id="c1", name="lookup", content="res")]),
+    ]
+    out = messages_to_anthropic(msgs)
+    assert out[0] == {"role": "user", "content": "hi"}
+    assert out[1]["role"] == "assistant"
+    blocks = out[1]["content"]
+    assert blocks[0] == {"type": "text", "text": "thinking"}
+    assert blocks[1] == {"type": "tool_use", "id": "c1", "name": "lookup", "input": {"q": "x"}}
+    res_block = out[2]["content"][0]
+    assert res_block == {"type": "tool_result", "tool_use_id": "c1", "content": "res"}
+
+
+def test_parse_anthropic_response_mixed_blocks():
+    blocks = [
+        SimpleNamespace(type="text", text="here is "),
+        SimpleNamespace(type="text", text="my plan"),
+        SimpleNamespace(type="tool_use", id="t1", name="get_error", input={"fingerprint": "ab"}),
+    ]
+    turn = parse_anthropic_response(blocks, stop_reason="tool_use")
+    assert turn.text == "here is my plan"
+    assert turn.stop_reason == "tool_use"
+    assert turn.tool_calls[0].name == "get_error"
+    assert turn.tool_calls[0].arguments == {"fingerprint": "ab"}
+
+
+def test_tool_spec_serialization():
+    spec = _spec("foo")
+    a = spec.to_anthropic()
+    assert set(a) == {"name", "description", "input_schema"}
+    o = spec.to_openai()
+    assert o["type"] == "function"
+    assert o["function"]["name"] == "foo"
+    assert o["function"]["parameters"] == spec.input_schema
+
+
+# ---------------------------------------------------------------------------
+# Investigation tools against a real temp DB
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seeded_db(tmp_path: Path) -> Path:
+    db = tmp_path / "logatory.db"
+    with ErrorsRepository(db) as repo:
+        repo.upsert(
+            fingerprint="fp1",
+            error_type="ConnectionError",
+            normalized_msg="ConnectionError: refused",
+            severity="error",
+            source="api",
+            timestamp=_T0,
+            sample="conn refused to db",
+            stack_trace="Traceback...\nConnectionError: refused",
+            stack_lang="python",
+        )
+        repo.upsert(
+            fingerprint="fp2",
+            error_type="TimeoutError",
+            normalized_msg="TimeoutError: slow",
+            severity="warning",
+            source="worker",
+            timestamp=_T0,
+            sample="timeout",
+        )
+    with FindingsRepository(db) as frepo:
+        frepo.add_findings(
+            [
+                Finding(
+                    rule_id="net.refused",
+                    severity=FindingSeverity.HIGH,
+                    message="connection refused spike",
+                    source="api",
+                    timestamp=_T0,
+                )
+            ]
+        )
+    return db
+
+
+def _call(tools, name, **kwargs):
+    tool = next(t for t in tools if t.spec.name == name)
+    return tool.handler(**kwargs)
+
+
+def test_get_error_tool(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    data = json.loads(_call(tools, "get_error", fingerprint="fp1"))
+    assert data["error_type"] == "ConnectionError"
+    assert data["count"] == 1
+
+
+def test_get_error_tool_missing(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    data = json.loads(_call(tools, "get_error", fingerprint="nope"))
+    assert "error" in data
+
+
+def test_get_occurrences_tool_truncates(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    rows = json.loads(_call(tools, "get_occurrences", fingerprint="fp1", limit=5))
+    assert rows
+    assert rows[0]["stack_trace"].startswith("Traceback")
+
+
+def test_list_errors_tool(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    rows = json.loads(_call(tools, "list_errors", limit=10))
+    fps = {r["fingerprint"] for r in rows}
+    assert {"fp1", "fp2"} <= fps
+
+
+def test_search_findings_tool(seeded_db):
+    import json
+
+    tools = build_investigation_tools(seeded_db)
+    rows = json.loads(_call(tools, "search_findings", keyword="refused"))
+    assert rows
+    assert rows[0]["rule_id"] == "net.refused"
+
+
+def test_search_findings_missing_table(tmp_path):
+    import json
+
+    # Fresh DB with no findings table created yet.
+    db = tmp_path / "empty.db"
+    db.touch()
+    tools = build_investigation_tools(db)
+    assert json.loads(_call(tools, "search_findings", keyword="x")) == []
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+class _CliClient(AbstractLLMClient):
+    provider_name = "fake"
+
+    def __init__(self, *, supports, available=True, cloud=False, answer="ANSWER"):
+        self.supports_tools = supports
+        self.is_cloud = cloud
+        self._available = available
+        self._answer = answer
+
+    def is_available(self):
+        return self._available
+
+    def generate(self, prompt, stream=True):  # pragma: no cover - unused
+        yield ""
+
+    def chat_with_tools(self, messages, tools, system=""):
+        return AssistantTurn(text=self._answer)
+
+
+def _seed_one_error(db: Path) -> None:
+    with ErrorsRepository(db) as repo:
+        repo.upsert(
+            fingerprint="fpCLI",
+            error_type="ConnectionError",
+            normalized_msg="x",
+            severity="error",
+            source="api",
+            timestamp=_T0,
+            sample="s",
+        )
+
+
+def test_cli_investigate_happy_path(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    monkeypatch.setattr(
+        agent_cmd, "make_llm_client", lambda _: _CliClient(supports=True, answer="ROOT CAUSE")
+    )
+    res = runner.invoke(main_app, ["agent", "investigate", "fpCLI", "--config", str(cfg_file)])
+    assert res.exit_code == 0, res.output
+    assert "ROOT CAUSE" in res.output
+
+
+def test_cli_investigate_unknown_fingerprint(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    monkeypatch.setattr(agent_cmd, "make_llm_client", lambda _: _CliClient(supports=True))
+    res = runner.invoke(main_app, ["agent", "investigate", "ghost", "--config", str(cfg_file)])
+    assert res.exit_code == 1
+    assert "not found" in res.output
+
+
+def test_cli_agent_requires_tool_support(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    monkeypatch.setattr(agent_cmd, "make_llm_client", lambda _: _CliClient(supports=False))
+    res = runner.invoke(main_app, ["agent", "ask", "what broke?", "--config", str(cfg_file)])
+    assert res.exit_code == 1
+    assert "does not support tool use" in res.output
+
+
+def test_cli_agent_unreachable_provider(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    monkeypatch.setattr(
+        agent_cmd,
+        "make_llm_client",
+        lambda _: _CliClient(supports=True, available=False),
+    )
+    res = runner.invoke(main_app, ["agent", "ask", "hi", "--config", str(cfg_file)])
+    assert res.exit_code == 1
+    assert "not reachable" in res.output
+
+
+def test_cli_agent_ask_verbose_shows_steps(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    # A client that calls one tool then answers, so verbose output has a step.
+    turns = [
+        AssistantTurn(tool_calls=[ToolCall(id="c1", name="list_errors", arguments={"limit": 5})]),
+        AssistantTurn(text="DONE"),
+    ]
+
+    class _Scripted(ScriptedClient):
+        is_cloud = True  # also exercises the cloud warning
+
+    monkeypatch.setattr(agent_cmd, "make_llm_client", lambda _: _Scripted(turns))
+    res = runner.invoke(
+        main_app,
+        ["agent", "ask", "list everything", "--config", str(cfg_file), "--verbose"],
+    )
+    assert res.exit_code == 0, res.output
+    assert "list_errors" in res.output
+    assert "DONE" in res.output
+    assert "Cloud provider" in res.output

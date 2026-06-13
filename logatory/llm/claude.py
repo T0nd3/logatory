@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import importlib.util
 from collections.abc import Iterator
+from typing import TYPE_CHECKING
 
 from .base import AbstractLLMClient
+from .tools import messages_to_anthropic, parse_anthropic_response
+
+if TYPE_CHECKING:
+    from .tools import AssistantTurn, Msg, ToolSpec
 
 _SDK_AVAILABLE = importlib.util.find_spec("anthropic") is not None
 
@@ -20,6 +25,7 @@ _DEFAULT_MODEL = "claude-haiku-4-5"
 class ClaudeClient(AbstractLLMClient):
     is_cloud = True
     provider_name = "claude"
+    supports_tools = True
 
     def __init__(
         self,
@@ -98,6 +104,41 @@ class ClaudeClient(AbstractLLMClient):
                 messages=messages,
             )
             yield msg.content[0].text
+
+    # ------------------------------------------------------------------
+    # Tool use (agent mode)
+    # ------------------------------------------------------------------
+
+    def chat_with_tools(
+        self,
+        messages: list[Msg],
+        tools: list[ToolSpec],
+        system: str = "",
+    ) -> AssistantTurn:
+        if not _SDK_AVAILABLE:
+            raise RuntimeError("anthropic SDK not installed. Run: pip install logatory[claude]")
+        if not self._api_key:
+            raise RuntimeError(
+                "No Anthropic API key found.\n"
+                "Set ANTHROPIC_API_KEY or add 'api_key' under 'llm:' in your config.yaml."
+            )
+
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=self._api_key)
+        kwargs: dict = {
+            "model": self._model,
+            "max_tokens": self._max_tokens,
+            "temperature": self._temperature,
+            "messages": messages_to_anthropic(messages),
+        }
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = [t.to_anthropic() for t in tools]
+
+        msg = client.messages.create(**kwargs)
+        return parse_anthropic_response(msg.content, getattr(msg, "stop_reason", "") or "")
 
     # Note: Claude has no public embedding API.
     # embed() inherits the default → returns [] → vector search disabled.

@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`logatory agent`:** a tool-using investigation agent that runs a multi-step
+  loop over your local data. `agent investigate <fingerprint>` triages a single
+  tracked error; `agent ask "<question>"` answers a free-form question. The agent
+  calls read-only DB tools (error records, recent occurrences with stack traces,
+  related errors, matching findings) to gather evidence before answering.
+  `--max-steps` bounds the loop, `--verbose` shows each tool call. Requires a
+  tool-capable provider (`claude` or any OpenAI-compatible endpoint, including a
+  local Ollama via `/v1`); other providers exit cleanly with guidance.
+- **Provider-neutral tool-use layer** (`llm/tools.py`, `llm/agent.py`): a small
+  `Msg`/`ToolSpec`/`ToolCall`/`ToolResult` model with per-provider converters,
+  plus a bounded agent loop. `chat_with_tools` is now implemented for the Claude
+  and OpenAI-compatible clients.
 - **Parsers:** Apache error log (classic 2.2 and 2.4 layouts, with log-level →
   severity mapping) and HAProxy HTTP log (syslog-prefix aware), both
   auto-detected. Apache *access* logs already parse via the combined-log parser.

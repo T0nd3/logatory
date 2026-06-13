@@ -16,9 +16,13 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import AbstractLLMClient
+from .tools import messages_to_openai, parse_openai_message
+
+if TYPE_CHECKING:
+    from .tools import AssistantTurn, Msg, ToolSpec
 
 # SSE line prefix for chat-completions streaming
 _DATA_PREFIX = b"data: "
@@ -27,6 +31,7 @@ _DONE_SENTINEL = b"[DONE]"
 
 class OpenAICompatibleClient(AbstractLLMClient):
     provider_name = "openai_compat"
+    supports_tools = True
 
     def __init__(
         self,
@@ -135,6 +140,34 @@ class OpenAICompatibleClient(AbstractLLMClient):
                     yield content
             except (json.JSONDecodeError, KeyError, IndexError):
                 continue
+
+    # ------------------------------------------------------------------
+    # Tool use (agent mode)
+    # ------------------------------------------------------------------
+
+    def chat_with_tools(
+        self,
+        messages: list[Msg],
+        tools: list[ToolSpec],
+        system: str = "",
+    ) -> AssistantTurn:
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages_to_openai(messages, system or None),
+            "temperature": self._temperature,
+            "max_tokens": self._max_tokens,
+            "stream": False,
+        }
+        if tools:
+            payload["tools"] = [t.to_openai() for t in tools]
+            payload["tool_choice"] = "auto"
+        try:
+            with self._post("/v1/chat/completions", payload) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.URLError as e:
+            raise RuntimeError(f"Cannot reach {self._endpoint}: {e}") from e
+        message = data["choices"][0]["message"]
+        return parse_openai_message(message)
 
     # ------------------------------------------------------------------
     # Embeddings

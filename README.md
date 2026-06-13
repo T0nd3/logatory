@@ -827,6 +827,36 @@ logatory llm ask "Which source files had the most brute-force attempts?"
 
 > **Privacy note:** LLM queries use *redacted* log data. When using a cloud provider (Claude, OpenAI), a warning is shown before any data is sent.
 
+### Agent (tool-using investigation)
+
+While `llm ask` is a single-shot RAG query, the **agent** runs a multi-step loop:
+it decides which read-only database tools to call, reads the results, and keeps
+going until it can answer — automated triage instead of a one-off prompt.
+
+```bash
+logatory agent [investigate|ask]
+```
+
+```bash
+# Triage a single tracked error end-to-end (root cause + next steps)
+logatory agent investigate abc123def456
+
+# Free-form question; the agent gathers evidence with tools as needed
+logatory agent ask "Why did the API start failing this afternoon?"
+
+# Show every tool call and its result; bound the loop length
+logatory agent ask "What is the most frequent critical error?" --verbose --max-steps 6
+```
+
+The agent only ever **reads** your local data via bounded tools (error records,
+recent occurrences with stack traces, related errors, matching findings), so a
+run can never mutate state.
+
+> **Requires a tool-capable provider.** Use `claude` or any OpenAI-compatible
+> endpoint (`provider: openai_compat` — this also covers a local Ollama via
+> `/v1`). The native `ollama` provider has no function-calling, so the agent
+> commands exit with guidance pointing you to a supported provider.
+
 ---
 
 ### opensearch
