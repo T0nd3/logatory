@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (errors that came back), `top_finding_rules` (most frequent/severe detections),
   `get_findings_by_rule` (drill-down), and `list_anomaly_sources` / `get_baseline`
   (statistical anomaly baselines) — all read-only and size-bounded.
+- **Agent actions (opt-in writes):** with `--allow-actions` the agent additionally
+  gets write-capable tools (`dismiss_finding`, `undismiss_finding`,
+  `list_dismissed`) so it can suppress confirmed false-positive rules itself.
+  Off by default — without the flag the agent stays strictly read-only; when on,
+  a warning is printed and the agent is told to dismiss sparingly and report it.
 - **Native Ollama tool calling:** the `ollama` provider now implements
   `chat_with_tools` via its `/api/chat` endpoint, so the agent runs fully local
   without the OpenAI-compatible `/v1` detour. Requires a tool-capable model

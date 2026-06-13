@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..storage.baseline_repo import BaselineRepository
+from ..storage.dismiss_repo import DismissRepository
 from ..storage.errors_repo import ErrorsRepository
 from ..storage.findings_repo import FindingsRepository
 from .agent import Tool
@@ -367,5 +368,95 @@ def build_investigation_tools(db_path: Path) -> list[Tool]:
                 },
             ),
             handler=get_baseline,
+        ),
+    ]
+
+
+def build_action_tools(db_path: Path) -> list[Tool]:
+    """Build the *write-capable* action toolset bound to *db_path*.
+
+    These tools mutate state (suppressing or re-enabling rule findings), so they
+    are kept separate from the read-only investigation tools and are only handed
+    to the agent when the operator explicitly opts in (``--allow-actions``).
+    """
+
+    def dismiss_finding(rule_id: str, source: str = "", reason: str = "") -> str:
+        if not rule_id:
+            return _dumps({"error": "rule_id is required."})
+        with DismissRepository(db_path) as repo:
+            created = repo.dismiss(rule_id, source or None, reason or None)
+        return _dumps(
+            {
+                "dismissed": True,
+                "rule_id": rule_id,
+                "source": source or "*",
+                "newly_added": bool(created),
+            }
+        )
+
+    def undismiss_finding(rule_id: str, source: str = "") -> str:
+        if not rule_id:
+            return _dumps({"error": "rule_id is required."})
+        with DismissRepository(db_path) as repo:
+            removed = repo.undismiss(rule_id, source or None)
+        return _dumps({"undismissed": bool(removed), "rule_id": rule_id, "source": source or "*"})
+
+    def list_dismissed() -> str:
+        with DismissRepository(db_path) as repo:
+            rows = repo.list_dismissed()
+        return _dumps(rows[:_MAX_LIMIT])
+
+    return [
+        Tool(
+            spec=ToolSpec(
+                name="dismiss_finding",
+                description="ACTION (writes): suppress all future findings for a rule. "
+                "Pass source to scope to one source, or omit it to dismiss the rule for "
+                "every source. Use only for confirmed false positives or noise.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "rule_id": {"type": "string", "description": "Rule id to suppress."},
+                        "source": {
+                            "type": "string",
+                            "description": "Source to scope to (optional; omit for all sources).",
+                        },
+                        "reason": {
+                            "type": "string",
+                            "description": "Short justification recorded with the dismissal.",
+                        },
+                    },
+                    "required": ["rule_id"],
+                },
+            ),
+            handler=dismiss_finding,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="undismiss_finding",
+                description="ACTION (writes): re-enable a previously dismissed rule "
+                "(reverses dismiss_finding for the same rule_id + source).",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "rule_id": {"type": "string", "description": "Rule id to re-enable."},
+                        "source": {
+                            "type": "string",
+                            "description": "Source it was scoped to (optional).",
+                        },
+                    },
+                    "required": ["rule_id"],
+                },
+            ),
+            handler=undismiss_finding,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="list_dismissed",
+                description="List currently dismissed (suppressed) rules with their "
+                "scope and reason — review before dismissing or re-enabling.",
+                input_schema={"type": "object", "properties": {}, "required": []},
+            ),
+            handler=list_dismissed,
         ),
     ]

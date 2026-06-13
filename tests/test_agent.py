@@ -636,6 +636,66 @@ def test_get_baseline_missing(tmp_path):
     assert "error" in data
 
 
+# ---------------------------------------------------------------------------
+# Action (write) tools
+# ---------------------------------------------------------------------------
+
+
+def test_dismiss_finding_tool_writes(tmp_path):
+    import json
+
+    from logatory.llm.agent_tools import build_action_tools
+    from logatory.storage.dismiss_repo import DismissRepository
+
+    db = tmp_path / "d.db"
+    tools = build_action_tools(db)
+    out = json.loads(
+        _call(tools, "dismiss_finding", rule_id="net.refused", source="api", reason="noise")
+    )
+    assert out["dismissed"] is True
+    assert out["newly_added"] is True
+    with DismissRepository(db) as repo:
+        assert repo.is_dismissed("net.refused", "api") is True
+
+
+def test_undismiss_finding_tool(tmp_path):
+    import json
+
+    from logatory.llm.agent_tools import build_action_tools
+
+    db = tmp_path / "d.db"
+    tools = build_action_tools(db)
+    _call(tools, "dismiss_finding", rule_id="r", source="s")
+    out = json.loads(_call(tools, "undismiss_finding", rule_id="r", source="s"))
+    assert out["undismissed"] is True
+    # second undismiss is a no-op
+    out2 = json.loads(_call(tools, "undismiss_finding", rule_id="r", source="s"))
+    assert out2["undismissed"] is False
+
+
+def test_list_dismissed_tool(tmp_path):
+    import json
+
+    from logatory.llm.agent_tools import build_action_tools
+
+    db = tmp_path / "d.db"
+    tools = build_action_tools(db)
+    _call(tools, "dismiss_finding", rule_id="r", source="s", reason="x")
+    rows = json.loads(_call(tools, "list_dismissed"))
+    assert any(d["rule_id"] == "r" for d in rows)
+
+
+def test_dismiss_finding_requires_rule_id(tmp_path):
+    import json
+
+    from logatory.llm.agent_tools import build_action_tools
+
+    db = tmp_path / "d.db"
+    tools = build_action_tools(db)
+    out = json.loads(_call(tools, "dismiss_finding", rule_id=""))
+    assert "error" in out
+
+
 def test_list_regressions_detects_reappearance(tmp_path):
     import json
 
@@ -793,6 +853,55 @@ def test_cli_triage_happy_path(tmp_path, monkeypatch):
     res = runner.invoke(main_app, ["agent", "triage", "--config", str(cfg_file)])
     assert res.exit_code == 0, res.output
     assert "PRIORITIZED" in res.output
+
+
+def test_cli_allow_actions_enables_dismiss(tmp_path, monkeypatch):
+    from logatory.storage.dismiss_repo import DismissRepository
+
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    turns = [
+        AssistantTurn(
+            tool_calls=[
+                ToolCall(
+                    id="c1",
+                    name="dismiss_finding",
+                    arguments={"rule_id": "noisy.rule", "source": "api"},
+                )
+            ]
+        ),
+        AssistantTurn(text="dismissed the noise"),
+    ]
+    monkeypatch.setattr(agent_cmd, "make_llm_client", lambda _: ScriptedClient(turns))
+    res = runner.invoke(
+        main_app, ["agent", "ask", "suppress noise", "--config", str(cfg_file), "--allow-actions"]
+    )
+    assert res.exit_code == 0, res.output
+    assert "Action mode" in res.output
+    with DismissRepository(db) as repo:
+        assert repo.is_dismissed("noisy.rule", "api") is True
+
+
+def test_cli_without_allow_actions_dismiss_is_unknown(tmp_path, monkeypatch):
+    db = tmp_path / "logatory.db"
+    _seed_one_error(db)
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text(f"db_path: {db}\n")
+
+    turns = [
+        AssistantTurn(
+            tool_calls=[ToolCall(id="c1", name="dismiss_finding", arguments={"rule_id": "x"})]
+        ),
+        AssistantTurn(text="done"),
+    ]
+    monkeypatch.setattr(agent_cmd, "make_llm_client", lambda _: ScriptedClient(turns))
+    res = runner.invoke(main_app, ["agent", "ask", "q", "--config", str(cfg_file), "--verbose"])
+    assert res.exit_code == 0, res.output
+    # Read-only by default: the action tool is not registered.
+    assert "unknown tool 'dismiss_finding'" in res.output
 
 
 def test_cli_json_output_is_parseable(tmp_path, monkeypatch):

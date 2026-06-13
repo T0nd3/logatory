@@ -864,11 +864,22 @@ logatory agent ask "What is the most frequent critical error?" --verbose --max-s
 logatory agent triage --json
 ```
 
-The agent only ever **reads** your local data via bounded tools, so a run can
-never mutate state. Available tools: `get_summary`, `list_errors`, `get_error`,
-`get_occurrences` (stack traces), `error_trend`, `list_regressions`,
-`top_finding_rules`, `get_findings_by_rule`, `search_findings`,
-`list_anomaly_sources` and `get_baseline` (anomaly baselines).
+By default the agent only ever **reads** your local data via bounded tools, so a
+run can never mutate state. Available read-only tools: `get_summary`,
+`list_errors`, `get_error`, `get_occurrences` (stack traces), `error_trend`,
+`list_regressions`, `top_finding_rules`, `get_findings_by_rule`,
+`search_findings`, `list_anomaly_sources` and `get_baseline` (anomaly baselines).
+
+Pass **`--allow-actions`** to additionally grant write-capable tools
+(`dismiss_finding`, `undismiss_finding`, `list_dismissed`) so the agent can
+suppress confirmed false-positive rules itself. This is opt-in and off by
+default; a warning is printed and the agent is instructed to dismiss sparingly
+and report exactly what it suppressed.
+
+```bash
+# Let the agent clean up noisy false positives (writes to the DB)
+logatory agent triage --allow-actions
+```
 
 > **Requires a tool-capable provider and model.** Works with `claude`, any
 > OpenAI-compatible endpoint (`provider: openai_compat`), and the native

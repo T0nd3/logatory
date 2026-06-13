@@ -16,7 +16,7 @@ import typer
 
 from logatory.config import Config
 from logatory.llm.agent import Agent, AgentResult
-from logatory.llm.agent_tools import build_investigation_tools
+from logatory.llm.agent_tools import build_action_tools, build_investigation_tools
 from logatory.llm.base import AbstractLLMClient
 from logatory.llm.factory import make_llm_client
 from logatory.storage.errors_repo import ErrorsRepository
@@ -36,6 +36,13 @@ _SYSTEM_PROMPT = (
     "evidence, give a concise, well-structured answer: the most likely root cause, "
     "the supporting evidence, and a short list of concrete next steps. If the tools "
     "return nothing useful, say so plainly instead of guessing."
+)
+
+_ACTION_PROMPT = (
+    " You also have write-capable ACTION tools (dismiss_finding / undismiss_finding). "
+    "You MAY dismiss findings that are clearly false positives or persistent noise, but "
+    "do so sparingly and only when the evidence is convincing; always state exactly what "
+    "you dismissed and why. When unsure, recommend a dismissal instead of performing it."
 )
 
 
@@ -120,11 +127,29 @@ def _render(result: AgentResult, *, verbose: bool, as_json: bool = False) -> Non
 
 
 def _run_agent(
-    cfg: Config, task: str, *, max_steps: int, verbose: bool, as_json: bool = False
+    cfg: Config,
+    task: str,
+    *,
+    max_steps: int,
+    verbose: bool,
+    as_json: bool = False,
+    allow_actions: bool = False,
 ) -> None:
     client = _prepare_client(cfg)
     tools = build_investigation_tools(cfg.db_path)
-    agent = Agent(client, tools, system=_SYSTEM_PROMPT, max_iterations=max_steps)
+    system = _SYSTEM_PROMPT
+    if allow_actions:
+        tools = tools + build_action_tools(cfg.db_path)
+        system = _SYSTEM_PROMPT + _ACTION_PROMPT
+        if not as_json:
+            typer.echo(
+                typer.style(
+                    "  [!] Action mode — the agent may dismiss findings (writes to the DB).",
+                    fg=typer.colors.YELLOW,
+                ),
+                err=True,
+            )
+    agent = Agent(client, tools, system=system, max_iterations=max_steps)
     if not as_json:
         typer.echo(
             f"\n  Provider: {cfg.llm.provider}  Model: {cfg.llm.model}  (max {max_steps} steps)"
@@ -155,6 +180,10 @@ def agent_investigate(
     json_output: Annotated[
         bool, typer.Option("--json", help="Emit the result as a JSON object (for CI).")
     ] = False,
+    allow_actions: Annotated[
+        bool,
+        typer.Option("--allow-actions", help="Let the agent dismiss findings (writes to DB)."),
+    ] = False,
 ) -> None:
     """Run the triage agent on a single tracked error to find its root cause."""
     cfg = Config.load(config)
@@ -172,7 +201,14 @@ def agent_investigate(
         "occurrences (stack traces), look for related errors and matching findings, "
         "then explain the most likely root cause and recommend next steps."
     )
-    _run_agent(cfg, task, max_steps=max_steps, verbose=verbose, as_json=json_output)
+    _run_agent(
+        cfg,
+        task,
+        max_steps=max_steps,
+        verbose=verbose,
+        as_json=json_output,
+        allow_actions=allow_actions,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -193,10 +229,21 @@ def agent_ask(
     json_output: Annotated[
         bool, typer.Option("--json", help="Emit the result as a JSON object (for CI).")
     ] = False,
+    allow_actions: Annotated[
+        bool,
+        typer.Option("--allow-actions", help="Let the agent dismiss findings (writes to DB)."),
+    ] = False,
 ) -> None:
     """Ask the agent a free-form question; it gathers evidence with tools as needed."""
     cfg = Config.load(config)
-    _run_agent(cfg, question, max_steps=max_steps, verbose=verbose, as_json=json_output)
+    _run_agent(
+        cfg,
+        question,
+        max_steps=max_steps,
+        verbose=verbose,
+        as_json=json_output,
+        allow_actions=allow_actions,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +271,19 @@ def agent_triage(
     json_output: Annotated[
         bool, typer.Option("--json", help="Emit the result as a JSON object (for CI).")
     ] = False,
+    allow_actions: Annotated[
+        bool,
+        typer.Option("--allow-actions", help="Let the agent dismiss findings (writes to DB)."),
+    ] = False,
 ) -> None:
     """Auto-triage the whole dataset: the agent surveys errors and findings and
     produces a prioritized report — no fingerprint needed."""
     cfg = Config.load(config)
-    _run_agent(cfg, _TRIAGE_TASK, max_steps=max_steps, verbose=verbose, as_json=json_output)
+    _run_agent(
+        cfg,
+        _TRIAGE_TASK,
+        max_steps=max_steps,
+        verbose=verbose,
+        as_json=json_output,
+        allow_actions=allow_actions,
+    )
