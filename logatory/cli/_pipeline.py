@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 
+import typer
+
 from logatory.config import Config
 from logatory.errors.tracker import ErrorTracker
 from logatory.models import Event, Finding
@@ -28,6 +30,50 @@ from logatory.rules.engine import RuleEngine
 from logatory.storage.dismiss_repo import DismissRepository
 from logatory.storage.errors_repo import ErrorsRepository
 from logatory.storage.findings_repo import FindingsRepository, meets_min_severity
+
+_SEP = "-" * 60
+
+
+def print_tail_header(
+    source_lines: list[str],
+    *,
+    no_rules: bool,
+    alert_webhook: str | None = None,
+    alert_min_severity: str = "high",
+) -> None:
+    """Print the standard ``<source> tail`` banner.
+
+    *source_lines* are the already-formatted source-specific lines (e.g.
+    ``"  Following : Docker — all"``); the shared rules/webhook/Ctrl+C lines and
+    the separators are added here.
+    """
+    typer.echo(f"\n{_SEP}")
+    for line in source_lines:
+        typer.echo(line)
+    typer.echo(f"  Rules     : {'off' if no_rules else 'on'}")
+    if alert_webhook:
+        typer.echo(f"  Webhook   : {alert_webhook}  (min: {alert_min_severity})")
+    typer.echo("  Press Ctrl+C to stop.")
+    typer.echo(f"{_SEP}\n")
+
+
+def print_tail_summary(
+    counts: dict[str, int],
+    *,
+    track_errors: bool = False,
+    alert_webhook: str | None = None,
+) -> None:
+    """Print the standard closing summary after a tail loop stops."""
+    typer.echo(f"\n{_SEP}")
+    typer.echo("  Stopped.")
+    typer.echo(f"  Events   : {counts['events']:,}")
+    typer.echo(f"  PII hits : {counts['pii']:,}")
+    typer.echo(f"  Findings : {counts['findings']:,}")
+    if track_errors:
+        typer.echo(f"  Errors   : {counts['errors']:,} tracked")
+    if alert_webhook:
+        typer.echo(f"  Webhooks : {counts['webhooks']:,} sent")
+    typer.echo(_SEP)
 
 
 async def run_tail_pipeline(

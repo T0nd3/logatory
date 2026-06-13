@@ -9,7 +9,7 @@ from typing import Annotated, Optional
 import typer
 
 from logatory.adapters.windows import WindowsEventLogAdapter
-from logatory.cli._pipeline import run_tail_pipeline
+from logatory.cli._pipeline import print_tail_header, print_tail_summary, run_tail_pipeline
 from logatory.cli._scan import ScanResult, build_pipeline, collect_scan, print_finding, render_scan
 from logatory.cli._types import RedactModeArg
 
@@ -125,15 +125,15 @@ def windows_tail(
     """
     cfg, redactor, engine = build_pipeline(config, redact, no_rules, rules_dir)
 
-    sep = "-" * 60
-    typer.echo(f"\n{sep}")
-    typer.echo(f"  Following : Windows log — {log}{f' ({provider})' if provider else ''}")
-    typer.echo(f"  Interval  : {poll_interval}s")
-    typer.echo(f"  Rules     : {'off' if no_rules else 'on'}")
-    if alert_webhook:
-        typer.echo(f"  Webhook   : {alert_webhook}  (min: {alert_min_severity})")
-    typer.echo("  Press Ctrl+C to stop.")
-    typer.echo(f"{sep}\n")
+    print_tail_header(
+        [
+            f"  Following : Windows log — {log}{f' ({provider})' if provider else ''}",
+            f"  Interval  : {poll_interval}s",
+        ],
+        no_rules=no_rules,
+        alert_webhook=alert_webhook,
+        alert_min_severity=alert_min_severity,
+    )
 
     counts = {"events": 0, "findings": 0, "pii": 0, "errors": 0, "webhooks": 0}
 
@@ -160,13 +160,4 @@ def windows_tail(
         typer.echo(f"\nError reading Windows events: {e}", err=True)
         raise typer.Exit(1)
 
-    typer.echo(f"\n{sep}")
-    typer.echo("  Stopped.")
-    typer.echo(f"  Events   : {counts['events']:,}")
-    typer.echo(f"  PII hits : {counts['pii']:,}")
-    typer.echo(f"  Findings : {counts['findings']:,}")
-    if track_errors:
-        typer.echo(f"  Errors   : {counts['errors']:,} tracked")
-    if alert_webhook:
-        typer.echo(f"  Webhooks : {counts['webhooks']:,} sent")
-    typer.echo(sep)
+    print_tail_summary(counts, track_errors=track_errors, alert_webhook=alert_webhook)

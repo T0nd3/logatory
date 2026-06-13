@@ -129,6 +129,43 @@ def test_render_scan_hides_source_field(capsys):
     assert "ignored" not in out  # source column suppressed
 
 
+def test_print_tail_header(capsys):
+    from logatory.cli._pipeline import print_tail_header
+
+    print_tail_header(
+        ["  Following : X"], no_rules=False, alert_webhook="http://h", alert_min_severity="high"
+    )
+    out = capsys.readouterr().out
+    assert "Following : X" in out
+    assert "Rules     : on" in out
+    assert "Webhook   : http://h" in out
+    assert "Press Ctrl+C to stop." in out
+
+
+def test_print_tail_summary(capsys):
+    from logatory.cli._pipeline import print_tail_summary
+
+    print_tail_summary(
+        {"events": 5, "pii": 2, "findings": 1, "errors": 3, "webhooks": 4},
+        track_errors=True,
+        alert_webhook="http://h",
+    )
+    out = capsys.readouterr().out
+    assert "Stopped." in out
+    assert "Events   : 5" in out
+    assert "Errors   : 3 tracked" in out
+    assert "Webhooks : 4 sent" in out
+
+
+def test_print_tail_summary_minimal(capsys):
+    from logatory.cli._pipeline import print_tail_summary
+
+    print_tail_summary({"events": 0, "pii": 0, "findings": 0, "errors": 0, "webhooks": 0})
+    out = capsys.readouterr().out
+    assert "Errors" not in out  # not shown unless track_errors
+    assert "Webhooks" not in out  # not shown unless alert_webhook
+
+
 def test_print_finding(capsys):
     finding = Finding(
         rule_id="RULE_X",
