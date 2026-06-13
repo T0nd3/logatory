@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **CI:** added a dedicated `typecheck` job that runs `mypy` on every push/PR,
+  enabled pip caching across all jobs (keyed off `pyproject.toml`), and made
+  superseded runs cancel automatically to save CI minutes.
 - **Static type checking:** added a `mypy` baseline (config in `pyproject.toml`,
   in the `dev` extra) and fixed the ~13 type issues it surfaced — tighter
   annotations on adapters, parsers, the config loader, web routes and the CLI.
