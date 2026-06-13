@@ -195,3 +195,56 @@ def parse_openai_message(message: dict[str, Any]) -> AssistantTurn:
             args = {}
         calls.append(ToolCall(id=tc.get("id", ""), name=fn.get("name", ""), arguments=args))
     return AssistantTurn(text=text, tool_calls=calls)
+
+
+# ---------------------------------------------------------------------------
+# Ollama <-> neutral  (native /api/chat tool calling)
+# ---------------------------------------------------------------------------
+#
+# Ollama is OpenAI-ish but with two differences we must handle:
+#   * tool calls carry no ``id`` — results are matched back by tool *name* via
+#     the ``tool_name`` field on the tool message, so we synthesize ids only for
+#     the neutral model and never send them back;
+#   * tool-call ``arguments`` are already a JSON object, not a JSON string.
+
+
+def messages_to_ollama(messages: list[Msg], system: str | None = None) -> list[dict[str, Any]]:
+    """Convert neutral messages to the Ollama ``/api/chat`` shape."""
+    out: list[dict[str, Any]] = []
+    if system:
+        out.append({"role": "system", "content": system})
+    for m in messages:
+        if m.tool_results:
+            for r in m.tool_results:
+                out.append({"role": "tool", "content": r.content, "tool_name": r.name})
+            continue
+        if m.role == "assistant" and m.tool_calls:
+            out.append(
+                {
+                    "role": "assistant",
+                    "content": m.text or "",
+                    "tool_calls": [
+                        {"function": {"name": c.name, "arguments": c.arguments}}
+                        for c in m.tool_calls
+                    ],
+                }
+            )
+            continue
+        out.append({"role": m.role, "content": m.text})
+    return out
+
+
+def parse_ollama_message(message: dict[str, Any]) -> AssistantTurn:
+    """Parse one Ollama ``message`` dict into an :class:`AssistantTurn`."""
+    text = message.get("content") or ""
+    calls: list[ToolCall] = []
+    for i, tc in enumerate(message.get("tool_calls") or []):
+        fn = tc.get("function", {})
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            try:
+                args = json.loads(args)
+            except (json.JSONDecodeError, TypeError):
+                args = {}
+        calls.append(ToolCall(id=f"call_{i}", name=fn.get("name", ""), arguments=dict(args or {})))
+    return AssistantTurn(text=text, tool_calls=calls)

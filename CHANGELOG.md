@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `get_summary` (dataset overview), `error_trend` (daily volume), `list_regressions`
   (errors that came back), `top_finding_rules` (most frequent/severe detections)
   and `get_findings_by_rule` (drill-down) — all read-only and size-bounded.
+- **Native Ollama tool calling:** the `ollama` provider now implements
+  `chat_with_tools` via its `/api/chat` endpoint, so the agent runs fully local
+  without the OpenAI-compatible `/v1` detour. Requires a tool-capable model
+  (e.g. `llama3.1`, `qwen2.5`, `mistral-nemo`).
 - **Provider-neutral tool-use layer** (`llm/tools.py`, `llm/agent.py`): a small
   `Msg`/`ToolSpec`/`ToolCall`/`ToolResult` model with per-provider converters,
   plus a bounded agent loop. `chat_with_tools` is now implemented for the Claude

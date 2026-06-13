@@ -859,10 +859,11 @@ never mutate state. Available tools: `get_summary`, `list_errors`, `get_error`,
 `get_occurrences` (stack traces), `error_trend`, `list_regressions`,
 `top_finding_rules`, `get_findings_by_rule` and `search_findings`.
 
-> **Requires a tool-capable provider.** Use `claude` or any OpenAI-compatible
-> endpoint (`provider: openai_compat` — this also covers a local Ollama via
-> `/v1`). The native `ollama` provider has no function-calling, so the agent
-> commands exit with guidance pointing you to a supported provider.
+> **Requires a tool-capable provider and model.** Works with `claude`, any
+> OpenAI-compatible endpoint (`provider: openai_compat`), and the native
+> `ollama` provider via its `/api/chat` tool calling — use a tool-capable model
+> there (e.g. `llama3.1`, `qwen2.5`, `mistral-nemo`). Providers without
+> function-calling exit cleanly with guidance.
 
 ---
 

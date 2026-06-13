@@ -10,9 +10,13 @@ import json
 import urllib.error
 import urllib.request
 from collections.abc import Iterator
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .base import AbstractLLMClient
+from .tools import messages_to_ollama, parse_ollama_message
+
+if TYPE_CHECKING:
+    from .tools import AssistantTurn, Msg, ToolSpec
 
 
 class OllamaError(RuntimeError):
@@ -24,6 +28,7 @@ class OllamaClient(AbstractLLMClient):
 
     is_cloud = False
     provider_name = "ollama"
+    supports_tools = True
 
     def __init__(
         self,
@@ -110,6 +115,46 @@ class OllamaClient(AbstractLLMClient):
     def generate_full(self, prompt: str) -> str:
         """Convenience method — return the complete response as a string."""
         return "".join(self.generate(prompt, stream=False))
+
+    # ------------------------------------------------------------------
+    # Tool use (agent mode) — native Ollama /api/chat
+    # ------------------------------------------------------------------
+
+    def chat_with_tools(
+        self,
+        messages: list[Msg],
+        tools: list[ToolSpec],
+        system: str = "",
+    ) -> AssistantTurn:
+        """Run one tool-enabled turn via Ollama's native ``/api/chat`` endpoint.
+
+        Requires a tool-capable model (e.g. ``llama3.1``, ``qwen2.5``,
+        ``mistral-nemo``). The OpenAI-style tool schema is reused verbatim, since
+        Ollama accepts the same ``{"type": "function", ...}`` shape.
+        """
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": messages_to_ollama(messages, system or None),
+            "stream": False,
+            "options": {
+                "temperature": self._temperature,
+                "num_ctx": self._max_context_tokens,
+            },
+        }
+        if tools:
+            payload["tools"] = [t.to_openai() for t in tools]
+        req = urllib.request.Request(
+            f"{self._endpoint}/api/chat",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read())
+        except urllib.error.URLError as e:
+            raise OllamaError(f"Cannot reach Ollama at {self._endpoint}: {e}") from e
+        return parse_ollama_message(data.get("message", {}))
 
     # ------------------------------------------------------------------
     # Embeddings

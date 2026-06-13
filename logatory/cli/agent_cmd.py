@@ -52,8 +52,8 @@ def _prepare_client(cfg: Config) -> AbstractLLMClient:
             err=True,
         )
         typer.echo(
-            "  Use a tool-capable provider: 'claude' or an OpenAI-compatible endpoint\n"
-            "  (set provider: openai_compat — this also covers a local Ollama via /v1).",
+            "  Use a tool-capable provider: 'claude', 'ollama' (native /api/chat,\n"
+            "  needs a tool-capable model), or any OpenAI-compatible endpoint.",
             err=True,
         )
         raise typer.Exit(1)

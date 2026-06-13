@@ -281,6 +281,154 @@ def test_tool_spec_serialization():
 
 
 # ---------------------------------------------------------------------------
+# Converters: Ollama (native /api/chat)
+# ---------------------------------------------------------------------------
+
+
+def test_messages_to_ollama_shapes():
+    from logatory.llm.tools import messages_to_ollama
+
+    msgs = [
+        Msg(role="user", text="hi"),
+        Msg(
+            role="assistant",
+            text="thinking",
+            tool_calls=[ToolCall(id="call_0", name="lookup", arguments={"q": "x"})],
+        ),
+        Msg(role="user", tool_results=[ToolResult(id="call_0", name="lookup", content="res")]),
+    ]
+    out = messages_to_ollama(msgs, system="be terse")
+    assert out[0] == {"role": "system", "content": "be terse"}
+    assert out[1] == {"role": "user", "content": "hi"}
+    assert out[2]["role"] == "assistant"
+    # arguments stay a dict (not a JSON string), and no id is sent back
+    assert out[2]["tool_calls"][0] == {"function": {"name": "lookup", "arguments": {"q": "x"}}}
+    # tool results are matched back by name via tool_name
+    assert out[3] == {"role": "tool", "content": "res", "tool_name": "lookup"}
+
+
+def test_parse_ollama_message_with_tool_calls():
+    from logatory.llm.tools import parse_ollama_message
+
+    message = {
+        "content": "",
+        "tool_calls": [
+            {"function": {"name": "get_error", "arguments": {"fingerprint": "ab"}}},
+            {"function": {"name": "list_errors", "arguments": {"limit": 3}}},
+        ],
+    }
+    turn = parse_ollama_message(message)
+    assert turn.wants_tools
+    # ids are synthesized positionally since Ollama omits them
+    assert [c.id for c in turn.tool_calls] == ["call_0", "call_1"]
+    assert turn.tool_calls[0].arguments == {"fingerprint": "ab"}
+
+
+def test_parse_ollama_message_string_arguments_fallback():
+    from logatory.llm.tools import parse_ollama_message
+
+    # Some models emit arguments as a JSON string; handle both.
+    good = parse_ollama_message(
+        {"tool_calls": [{"function": {"name": "x", "arguments": '{"a": 1}'}}]}
+    )
+    assert good.tool_calls[0].arguments == {"a": 1}
+    bad = parse_ollama_message(
+        {"tool_calls": [{"function": {"name": "x", "arguments": "not-json"}}]}
+    )
+    assert bad.tool_calls[0].arguments == {}
+
+
+def test_ollama_client_supports_tools_and_chat(monkeypatch):
+    import json
+    import urllib.request
+
+    from logatory.llm.client import OllamaClient
+
+    assert OllamaClient.supports_tools is True
+
+    captured: dict = {}
+
+    class FakeResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def read(self):
+            return json.dumps(
+                {
+                    "message": {
+                        "content": "",
+                        "tool_calls": [{"function": {"name": "get_summary", "arguments": {}}}],
+                    }
+                }
+            ).encode()
+
+    def fake_urlopen(req, *a, **kw):
+        captured["url"] = req.full_url
+        captured["body"] = json.loads(req.data)
+        return FakeResp()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    client = OllamaClient(model="llama3.1")
+    turn = client.chat_with_tools(
+        [Msg(role="user", text="triage")], [_spec("get_summary")], system="sys"
+    )
+    assert captured["url"].endswith("/api/chat")
+    assert captured["body"]["tools"][0]["function"]["name"] == "get_summary"
+    assert captured["body"]["messages"][0] == {"role": "system", "content": "sys"}
+    assert turn.tool_calls[0].name == "get_summary"
+
+
+def test_ollama_native_agent_loop_end_to_end(monkeypatch):
+    """Drive the full agent loop through a real OllamaClient with scripted HTTP."""
+    import json
+    import urllib.request
+
+    from logatory.llm.client import OllamaClient
+
+    responses = [
+        # 1st turn: model asks to call a tool
+        {
+            "message": {
+                "content": "",
+                "tool_calls": [{"function": {"name": "ping", "arguments": {}}}],
+            }
+        },
+        # 2nd turn: model answers in plain text
+        {"message": {"content": "native ollama done", "tool_calls": []}},
+    ]
+
+    class FakeResp:
+        def __init__(self, body):
+            self._body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def read(self):
+            return json.dumps(self._body).encode()
+
+    def fake_urlopen(req, *a, **kw):
+        return FakeResp(responses.pop(0))
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+
+    calls: list = []
+    agent = Agent(
+        OllamaClient(model="llama3.1"), [_tool("ping", lambda **_: calls.append(1) or "pong")]
+    )
+    result = agent.run("go")
+    assert result.answer == "native ollama done"
+    assert result.truncated is False
+    assert calls == [1]  # the tool ran exactly once
+
+
+# ---------------------------------------------------------------------------
 # Investigation tools against a real temp DB
 # ---------------------------------------------------------------------------
 
