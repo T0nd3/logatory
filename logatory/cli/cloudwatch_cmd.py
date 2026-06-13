@@ -10,24 +10,10 @@ import typer
 
 from logatory.adapters.cloudwatch import CloudWatchAdapter
 from logatory.cli._pipeline import run_tail_pipeline
-from logatory.cli._types import REDACT_MAP, RedactModeArg
-from logatory.cli.colors import SEVERITY_COLOR
-from logatory.config import Config
-from logatory.errors.tracker import ErrorTracker
-from logatory.models import Event, Finding
-from logatory.pii.redactor import PIIRedactor
-from logatory.plugins.loader import compile_plugin_pii_patterns, load_plugins
-from logatory.rules.loader import build_engine
-from logatory.storage.errors_repo import ErrorsRepository
+from logatory.cli._scan import ScanResult, build_pipeline, collect_scan, print_finding, render_scan
+from logatory.cli._types import RedactModeArg
 
 app = typer.Typer(help="Analyze AWS CloudWatch Logs via the aws CLI — no boto3 needed.")
-
-
-def _print_finding(finding: Finding) -> None:
-    color = SEVERITY_COLOR.get(finding.severity.value, typer.colors.WHITE)
-    ts = finding.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"  [{finding.severity.value.upper()}] {ts}  {finding.rule_id}  {finding.message}"
-    typer.echo(typer.style(line, fg=color))
 
 
 @app.command("scan")
@@ -61,25 +47,9 @@ def cloudwatch_scan(
     event's message is parsed like any other source and tagged with its log
     group and stream.
     """
-    cfg = Config.load(config)
+    cfg, redactor, engine = build_pipeline(config, redact, no_rules, rules_dir)
 
-    plugin_registry = load_plugins(cfg.plugins_dir)
-    plugin_pii = compile_plugin_pii_patterns(plugin_registry)
-    redactor = PIIRedactor.from_config(
-        salt=cfg.pii_salt,
-        rules_path=cfg.pii_rules_path,
-        mode=REDACT_MAP[redact],
-        additional=plugin_pii or None,
-    )
-
-    engine = build_engine(no_rules, rules_dir, plugin_registry)
-
-    events: list[Event] = []
-    findings: list[Finding] = []
-    pii_hits = 0
-
-    async def _run() -> None:
-        nonlocal pii_hits
+    async def _run() -> ScanResult:
         adapter = CloudWatchAdapter(
             log_group=log_group,
             log_stream=log_stream,
@@ -89,55 +59,26 @@ def cloudwatch_scan(
             profile=profile,
             limit=max_events,
         )
-        async for event in adapter.events():
-            result = redactor.redact(event.message)
-            event.message = result.text
-            event.raw = redactor.redact(event.raw).text
-            pii_hits += len(result.hits)
-            events.append(event)
-            if engine:
-                findings.extend(engine.process(event))
+        return await collect_scan(adapter.events(), redactor, engine)
 
     try:
-        asyncio.run(_run())
+        result = asyncio.run(_run())
     except Exception as e:
         typer.echo(f"Error reading CloudWatch Logs: {e}", err=True)
         raise typer.Exit(1)
 
-    streams = sorted({e.source for e in events})
-    sep = "-" * 60
-    typer.echo(
-        f"\n{sep}\n"
-        f"  Source     : CloudWatch ({log_group})\n"
-        f"  Streams    : {len(streams):,}\n"
-        f"  Events     : {len(events):,}\n"
-        f"  PII hits   : {pii_hits:,} (mode: {redact.value})\n"
-        f"  Findings   : {len(findings):,}\n"
-        f"{sep}"
+    streams = sorted({e.source for e in result.events})
+    render_scan(
+        result,
+        source_label=f"CloudWatch ({log_group})",
+        redact_mode=redact.value,
+        limit=limit,
+        show_all=show_all,
+        no_rules=no_rules,
+        cfg=cfg,
+        track_errors=track_errors,
+        extra_lines=[f"  Streams    : {len(streams):,}"],
     )
-
-    sample = events if show_all else events[:limit]
-    if sample:
-        typer.echo(f"\n  Events ({len(sample)} of {len(events):,}):\n")
-        for i, ev in enumerate(sample, 1):
-            ts = ev.timestamp.strftime("%Y-%m-%d %H:%M:%S") if ev.timestamp else "no timestamp"
-            sev = ev.severity.value.upper().ljust(8)
-            typer.echo(f"  [{i:>5}] {ts}  {sev}  {ev.source}  {ev.message[:100]}")
-        if not show_all and len(events) > limit:
-            typer.echo(f"\n  ... {len(events) - limit:,} more. Use --show-all or --limit N.")
-
-    if findings:
-        typer.echo(f"\n  Findings ({len(findings)}):\n")
-        for finding in findings:
-            _print_finding(finding)
-    elif not no_rules:
-        typer.echo("\n  No findings.")
-
-    if track_errors and events:
-        with ErrorsRepository(cfg.db_path) as e_repo:
-            tracker = ErrorTracker(e_repo)
-            tracked = sum(1 for ev in events if tracker.process(ev) is not None)
-        typer.echo(f"\n  Errors tracked: {tracked:,} -> {cfg.db_path}")
 
 
 @app.command("tail")
@@ -182,18 +123,7 @@ def cloudwatch_tail(
     Polls the group every --poll-interval seconds, advancing a timestamp
     cursor and de-duplicating by eventId. Runs until Ctrl+C.
     """
-    cfg = Config.load(config)
-
-    plugin_registry = load_plugins(cfg.plugins_dir)
-    plugin_pii = compile_plugin_pii_patterns(plugin_registry)
-    redactor = PIIRedactor.from_config(
-        salt=cfg.pii_salt,
-        rules_path=cfg.pii_rules_path,
-        mode=REDACT_MAP[redact],
-        additional=plugin_pii or None,
-    )
-
-    engine = build_engine(no_rules, rules_dir, plugin_registry)
+    cfg, redactor, engine = build_pipeline(config, redact, no_rules, rules_dir)
 
     sep = "-" * 60
     typer.echo(f"\n{sep}")
@@ -223,7 +153,7 @@ def cloudwatch_tail(
             engine=engine,
             counts=counts,
             cfg=cfg,
-            print_finding=_print_finding,
+            print_finding=print_finding,
             track_errors=track_errors,
             track_findings=track_findings,
             alert_webhook=alert_webhook,

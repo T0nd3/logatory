@@ -10,24 +10,10 @@ import typer
 
 from logatory.adapters.gcp_logging import GCPLoggingAdapter
 from logatory.cli._pipeline import run_tail_pipeline
-from logatory.cli._types import REDACT_MAP, RedactModeArg
-from logatory.cli.colors import SEVERITY_COLOR
-from logatory.config import Config
-from logatory.errors.tracker import ErrorTracker
-from logatory.models import Event, Finding
-from logatory.pii.redactor import PIIRedactor
-from logatory.plugins.loader import compile_plugin_pii_patterns, load_plugins
-from logatory.rules.loader import build_engine
-from logatory.storage.errors_repo import ErrorsRepository
+from logatory.cli._scan import ScanResult, build_pipeline, collect_scan, print_finding, render_scan
+from logatory.cli._types import RedactModeArg
 
 app = typer.Typer(help="Analyze GCP Cloud Logging entries via the gcloud CLI.")
-
-
-def _print_finding(finding: Finding) -> None:
-    color = SEVERITY_COLOR.get(finding.severity.value, typer.colors.WHITE)
-    ts = finding.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"  [{finding.severity.value.upper()}] {ts}  {finding.rule_id}  {finding.message}"
-    typer.echo(typer.style(line, fg=color))
 
 
 @app.command("scan")
@@ -55,82 +41,38 @@ def gcp_scan(
     No google-cloud dependency — entries come straight through `gcloud
     logging read`. Severity and timestamp come from the entry itself.
     """
-    cfg = Config.load(config)
+    cfg, redactor, engine = build_pipeline(config, redact, no_rules, rules_dir)
 
-    plugin_registry = load_plugins(cfg.plugins_dir)
-    plugin_pii = compile_plugin_pii_patterns(plugin_registry)
-    redactor = PIIRedactor.from_config(
-        salt=cfg.pii_salt,
-        rules_path=cfg.pii_rules_path,
-        mode=REDACT_MAP[redact],
-        additional=plugin_pii or None,
-    )
-
-    engine = build_engine(no_rules, rules_dir, plugin_registry)
-
-    events: list[Event] = []
-    findings: list[Finding] = []
-    pii_hits = 0
-
-    async def _run() -> None:
-        nonlocal pii_hits
+    async def _run() -> ScanResult:
         adapter = GCPLoggingAdapter(
             log_filter=log_filter,
             project=project,
             since=since,
             limit=max_events,
         )
-        async for event in adapter.events():
-            result = redactor.redact(event.message)
-            event.message = result.text
-            event.raw = redactor.redact(event.raw).text
-            pii_hits += len(result.hits)
-            events.append(event)
-            if engine:
-                findings.extend(engine.process(event))
+        return await collect_scan(adapter.events(), redactor, engine)
 
     try:
-        asyncio.run(_run())
+        result = asyncio.run(_run())
     except Exception as e:
         typer.echo(f"Error reading Cloud Logging: {e}", err=True)
         raise typer.Exit(1)
 
-    resources = sorted({e.source for e in events})
-    sep = "-" * 60
-    typer.echo(
-        f"\n{sep}\n"
-        f"  Source     : GCP Cloud Logging ({project or 'default project'})\n"
-        f"  Resources  : {len(resources):,}\n"
-        f"  Events     : {len(events):,}\n"
-        f"  PII hits   : {pii_hits:,} (mode: {redact.value})\n"
-        f"  Findings   : {len(findings):,}\n"
-        f"{sep}"
-    )
+    resources = sorted({e.source for e in result.events})
+    extra = [f"  Resources  : {len(resources):,}"]
     if resources:
-        typer.echo(f"  Resources  : {', '.join(resources[:10])}")
-
-    sample = events if show_all else events[:limit]
-    if sample:
-        typer.echo(f"\n  Events ({len(sample)} of {len(events):,}):\n")
-        for i, ev in enumerate(sample, 1):
-            ts = ev.timestamp.strftime("%Y-%m-%d %H:%M:%S") if ev.timestamp else "no timestamp"
-            sev = ev.severity.value.upper().ljust(8)
-            typer.echo(f"  [{i:>5}] {ts}  {sev}  {ev.source}  {ev.message[:100]}")
-        if not show_all and len(events) > limit:
-            typer.echo(f"\n  ... {len(events) - limit:,} more. Use --show-all or --limit N.")
-
-    if findings:
-        typer.echo(f"\n  Findings ({len(findings)}):\n")
-        for finding in findings:
-            _print_finding(finding)
-    elif not no_rules:
-        typer.echo("\n  No findings.")
-
-    if track_errors and events:
-        with ErrorsRepository(cfg.db_path) as e_repo:
-            tracker = ErrorTracker(e_repo)
-            tracked = sum(1 for ev in events if tracker.process(ev) is not None)
-        typer.echo(f"\n  Errors tracked: {tracked:,} -> {cfg.db_path}")
+        extra.append(f"  Resources  : {', '.join(resources[:10])}")
+    render_scan(
+        result,
+        source_label=f"GCP Cloud Logging ({project or 'default project'})",
+        redact_mode=redact.value,
+        limit=limit,
+        show_all=show_all,
+        no_rules=no_rules,
+        cfg=cfg,
+        track_errors=track_errors,
+        extra_lines=extra,
+    )
 
 
 @app.command("tail")
@@ -172,18 +114,7 @@ def gcp_tail(
     Polls every --poll-interval seconds, AND-ing a timestamp clause onto the
     filter and de-duplicating by insertId. Runs until Ctrl+C.
     """
-    cfg = Config.load(config)
-
-    plugin_registry = load_plugins(cfg.plugins_dir)
-    plugin_pii = compile_plugin_pii_patterns(plugin_registry)
-    redactor = PIIRedactor.from_config(
-        salt=cfg.pii_salt,
-        rules_path=cfg.pii_rules_path,
-        mode=REDACT_MAP[redact],
-        additional=plugin_pii or None,
-    )
-
-    engine = build_engine(no_rules, rules_dir, plugin_registry)
+    cfg, redactor, engine = build_pipeline(config, redact, no_rules, rules_dir)
 
     sep = "-" * 60
     typer.echo(f"\n{sep}")
@@ -210,7 +141,7 @@ def gcp_tail(
             engine=engine,
             counts=counts,
             cfg=cfg,
-            print_finding=_print_finding,
+            print_finding=print_finding,
             track_errors=track_errors,
             track_findings=track_findings,
             alert_webhook=alert_webhook,
