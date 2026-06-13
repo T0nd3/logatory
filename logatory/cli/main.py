@@ -16,7 +16,7 @@ from logatory.anomaly.detector import (
     detect_anomalies as run_anomaly_detection,
 )
 from logatory.anomaly.features import FeatureExtractor
-from logatory.cli import serve_cmd, tail_cmd
+from logatory.cli import serve_cmd, setup_cmd, tail_cmd
 from logatory.cli._types import REDACT_MAP, RedactModeArg
 from logatory.cli.agent_cmd import app as agent_app
 from logatory.cli.alerts_cmd import app as alerts_app
@@ -58,6 +58,7 @@ from logatory.storage.findings_repo import FindingsRepository, meets_min_severit
 app = typer.Typer(name="logatory", help="Logatory — local log analysis with LLM support.")
 app.command("tail")(tail_cmd.tail_watch)
 app.command("serve")(serve_cmd.serve)
+app.command("init")(setup_cmd.init)
 rules_app = typer.Typer(help="Manage detection rules.")
 app.add_typer(rules_app, name="rules")
 app.add_typer(opensearch_app, name="opensearch")

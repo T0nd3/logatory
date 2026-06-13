@@ -1079,9 +1079,16 @@ logatory demo clear
 
 ## Configuration
 
-Copy `config.yaml.example` to `config.yaml` and adapt. When no `--config` is
-passed, Logatory looks for a config in `$LOGATORY_CONFIG`, `./config.yaml`, then
+Run `logatory init` to generate a `config.yaml` (with a freshly generated PII
+salt), or copy `config.yaml.example` and adapt. When no `--config` is passed,
+Logatory looks for a config in `$LOGATORY_CONFIG`, `./config.yaml`, then
 `~/.config/logatory/config.yaml`.
+
+```bash
+logatory init                              # write ./config.yaml
+logatory init --minimal                    # smaller starter config
+logatory init -o ~/.config/logatory/config.yaml
+```
 
 ```yaml
 # SQLite database for findings, errors, and baselines

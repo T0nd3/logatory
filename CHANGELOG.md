@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`logatory init`:** scaffold a `config.yaml` with a freshly generated PII salt.
+  Supports `--minimal`, `--force` and `-o/--output` (creates parent directories),
+  so a working config is one command away.
 - **Config auto-discovery:** when no `--config` is given, Logatory now searches
   `$LOGATORY_CONFIG`, `./config.yaml`, then `~/.config/logatory/config.yaml`
   before falling back to built-in defaults — so you no longer have to pass
