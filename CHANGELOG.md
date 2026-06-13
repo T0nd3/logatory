@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **CLI internals:** factored the duplicated one-shot `scan` scaffolding shared
+  by all 12 source commands (docker, journald, kubernetes, windows, s3,
+  cloudwatch, gcp, ssh, syslog, loki, graylog, opensearch) into a single
+  `cli/_scan.py` runner (`build_pipeline` / `collect_scan` / `render_scan` /
+  `print_finding`). The CLI shrinks by ~650 lines and 13 copied finding
+  formatters collapse into one, so pipeline changes now land everywhere at once.
+  No user-facing behaviour change.
+
 ### Added
 - **`scan --json`:** emit the scan result as a single JSON object (format, event
   and PII counts, the findings list, a bounded events sample, and — with
