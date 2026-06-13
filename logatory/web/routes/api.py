@@ -173,7 +173,7 @@ async def api_upload(
     Nothing is written to the database — results are shown in-page only.
     """
     from logatory.adapters.file import FileAdapter
-    from logatory.parsers.detector import FormatDetector
+    from logatory.parsers.detector import FormatDetector, LogFormat
     from logatory.pii.redactor import PIIRedactor, RedactMode
 
     filename = file.filename or "upload.log"
@@ -210,7 +210,8 @@ async def api_upload(
                 sample_lines.append(line)
                 if len(sample_lines) >= 10:
                     break
-            format_name = FormatDetector().detect(sample_lines, tmp_path).value
+            _detected = FormatDetector().detect(sample_lines, tmp_path)
+            format_name = _detected.value if isinstance(_detected, LogFormat) else _detected
         except Exception:
             format_name = "auto"
 
@@ -310,7 +311,7 @@ def api_explain(
             error = f"LLM provider '{cfg.llm.provider}' is not reachable."
         else:
             prompt = _explain_prompt(rule_id, severity, message, source)
-            explanation = client.generate(prompt, stream=False)
+            explanation = "".join(client.generate(prompt, stream=False))
     except Exception as exc:
         error = str(exc)
 

@@ -19,8 +19,8 @@ class FileAdapter(SourceAdapter):
 
     async def events(self) -> AsyncIterator[Event]:
         lines = self._read_lines()
-        sample = []
-        buf = []
+        sample: list[str] = []
+        buf: list[str] = []
         for line in lines:
             buf.append(line)
             if len(sample) < 5 and line.strip():

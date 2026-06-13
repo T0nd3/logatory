@@ -16,6 +16,7 @@ import urllib.parse
 from datetime import UTC, datetime
 
 from ..models import Event
+from ..parsers.base import BaseParser
 from ..parsers.detector import FormatDetector
 from ..parsers.registry import get_parser
 from ._http import basic_auth_header, http_get
@@ -61,7 +62,7 @@ class LokiAdapter(HttpPollingAdapter):
         self._org_id = org_id
         self._timeout = timeout
         self._fetcher = fetcher  # injectable for tests: (url, headers) -> str
-        self._parser = None  # built lazily from the first batch's sample
+        self._parser: BaseParser | None = None  # built lazily from the first batch's sample
 
     # -- request construction ----------------------------------------------
 

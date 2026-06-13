@@ -218,7 +218,7 @@ def v1_ingest(
     # Resolve format
     if payload.format:
         try:
-            fmt = LogFormat(payload.format)
+            fmt: LogFormat | str = LogFormat(payload.format)
         except ValueError:
             valid = ", ".join(f.value for f in LogFormat)
             raise HTTPException(

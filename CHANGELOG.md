@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Static type checking:** added a `mypy` baseline (config in `pyproject.toml`,
+  in the `dev` extra) and fixed the ~13 type issues it surfaced — tighter
+  annotations on adapters, parsers, the config loader, web routes and the CLI.
+  The codebase now type-checks cleanly; run `mypy` alongside `ruff` and `pytest`.
+- **Lint:** enabled the `PERF`, `PTH`, `PIE`, `FLY`, `RET`, `RSE` and `LOG` ruff
+  rule groups and fixed all findings (list-comprehensions, `pathlib`, f-strings).
 - **CLI internals:** factored the duplicated one-shot `scan` scaffolding shared
   by all 12 source commands (docker, journald, kubernetes, windows, s3,
   cloudwatch, gcp, ssh, syslog, loki, graylog, opensearch) into a single

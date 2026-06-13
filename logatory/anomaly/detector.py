@@ -12,7 +12,7 @@ are merged — whichever flags a bucket first wins.
 
 from __future__ import annotations
 
-import importlib
+import importlib.util
 from dataclasses import dataclass
 
 from ..models import Finding, FindingSeverity

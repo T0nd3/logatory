@@ -98,7 +98,7 @@ class TailAdapter(SourceAdapter):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _detect_format(self) -> LogFormat:
+    def _detect_format(self) -> LogFormat | str:
         """Read the first few lines to detect the log format."""
         sample: list[str] = []
         try:

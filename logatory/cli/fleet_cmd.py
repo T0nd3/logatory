@@ -401,7 +401,7 @@ def fleet_tail(
     if show_events:
         out_mode = "all events + findings"
     elif min_threshold is not None:
-        out_mode = f"findings + events at/above {min_severity.lower()}"
+        out_mode = f"findings + events at/above {(min_severity or '').lower()}"
     else:
         out_mode = "findings only"
     typer.echo(f"\n{sep}")
@@ -452,7 +452,7 @@ def fleet_tail(
             try:
                 kind, name, payload = q.get(timeout=1.0)
             except queue.Empty:
-                kind = name = payload = None
+                kind = name = payload = None  # type: ignore[assignment]
 
             if kind == "event":
                 event = payload

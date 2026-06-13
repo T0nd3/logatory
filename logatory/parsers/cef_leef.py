@@ -126,7 +126,7 @@ def _parse_time(value: str | None) -> datetime | None:
         return None
     if token.isdigit():
         # Epoch — milliseconds if it has 13+ digits, otherwise seconds.
-        num = int(token)
+        num: float = int(token)
         if len(token) >= 12:
             num /= 1000
         try:

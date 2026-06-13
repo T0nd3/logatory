@@ -29,6 +29,7 @@ CI runs three things on Linux, Windows and macOS (Python 3.11, 3.12, 3.13 and
 pytest                  # test suite
 ruff check .            # linter
 ruff format --check .   # formatting
+mypy                    # static type checking (config in pyproject.toml)
 ```
 
 `ruff format .` (without `--check`) applies the formatting. All ruff

@@ -29,7 +29,7 @@ def build_notifier(channel: AlertChannel) -> Notifier:
     if t in _URL_TYPES:
         if not channel.url:
             raise ValueError(f"Alert channel '{t}' requires a 'url'.")
-        return _URL_TYPES[t](
+        return _URL_TYPES[t](  # type: ignore[abstract]
             url=channel.url,
             min_severity=channel.min_severity,
             cooldown=channel.cooldown,
