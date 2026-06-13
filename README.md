@@ -1090,6 +1090,16 @@ logatory init --minimal                    # smaller starter config
 logatory init -o ~/.config/logatory/config.yaml
 ```
 
+Run `logatory doctor` to verify your setup — it checks that the config loads, a
+PII salt is set, the database directory is writable, the LLM provider is
+configured/reachable (and that cloud API keys are present), plugins load, and
+alert channels build. It exits non-zero on hard failures, so it works in CI too.
+
+```bash
+logatory doctor
+logatory doctor --config ~/.config/logatory/config.yaml
+```
+
 ```yaml
 # SQLite database for findings, errors, and baselines
 db_path: logatory.db        # use /data/logatory.db inside Docker

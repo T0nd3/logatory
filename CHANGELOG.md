@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`logatory init`:** scaffold a `config.yaml` with a freshly generated PII salt.
   Supports `--minimal`, `--force` and `-o/--output` (creates parent directories),
   so a working config is one command away.
+- **`logatory doctor`:** an environment health check — verifies the config loads,
+  a PII salt is set, the database directory is writable, the LLM provider is
+  configured/reachable (cloud API keys present), plugins load, and alert channels
+  build. Exits non-zero on hard failures for use in CI.
 - **Config auto-discovery:** when no `--config` is given, Logatory now searches
   `$LOGATORY_CONFIG`, `./config.yaml`, then `~/.config/logatory/config.yaml`
   before falling back to built-in defaults — so you no longer have to pass

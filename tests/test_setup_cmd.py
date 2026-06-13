@@ -78,3 +78,87 @@ def test_init_generates_unique_salt(tmp_path):
     runner.invoke(main_app, ["init", "-o", str(a)])
     runner.invoke(main_app, ["init", "-o", str(b)])
     assert _salt_of(a) != _salt_of(b)
+
+
+# ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+
+class _FakeLLM:
+    def __init__(self, *, cloud: bool = False, available: bool = True) -> None:
+        self.is_cloud = cloud
+        self.provider_name = "fake"
+        self._available = available
+
+    def is_available(self) -> bool:
+        return self._available
+
+
+def _patch_llm(monkeypatch, **kwargs) -> None:
+    # doctor imports make_llm_client from logatory.llm.factory at call time.
+    monkeypatch.setattr("logatory.llm.factory.make_llm_client", lambda _cfg: _FakeLLM(**kwargs))
+
+
+def _cfg(tmp_path: Path, body: str) -> Path:
+    p = tmp_path / "config.yaml"
+    p.write_text(body, encoding="utf-8")
+    return p
+
+
+def test_doctor_healthy_local(tmp_path, monkeypatch):
+    _patch_llm(monkeypatch, cloud=False, available=True)
+    cfg = _cfg(
+        tmp_path,
+        f"db_path: {tmp_path / 'l.db'}\npii_salt: abc123\n"
+        "llm:\n  provider: ollama\n  model: gemma3:4b\n",
+    )
+    res = runner.invoke(main_app, ["doctor", "--config", str(cfg)])
+    assert res.exit_code == 0, res.output
+    assert "All critical checks passed" in res.output
+    assert "PII salt" in res.output
+
+
+def test_doctor_warns_empty_salt_but_passes(tmp_path, monkeypatch):
+    _patch_llm(monkeypatch, cloud=False, available=True)
+    cfg = _cfg(tmp_path, f"db_path: {tmp_path / 'l.db'}\npii_salt: ''\n")
+    res = runner.invoke(main_app, ["doctor", "--config", str(cfg)])
+    assert res.exit_code == 0, res.output
+    assert "WARN" in res.output
+
+
+def test_doctor_fails_on_invalid_alerts(tmp_path, monkeypatch):
+    _patch_llm(monkeypatch, cloud=False, available=True)
+    cfg = _cfg(
+        tmp_path,
+        f"db_path: {tmp_path / 'l.db'}\npii_salt: abc\nalerts:\n  - type: slack\n",  # missing url
+    )
+    res = runner.invoke(main_app, ["doctor", "--config", str(cfg)])
+    assert res.exit_code == 1
+    assert "FAIL" in res.output
+
+
+def test_doctor_fails_cloud_without_key(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    _patch_llm(monkeypatch, cloud=True, available=False)
+    cfg = _cfg(
+        tmp_path,
+        f"db_path: {tmp_path / 'l.db'}\npii_salt: abc\nllm:\n  provider: claude\n  model: x\n",
+    )
+    res = runner.invoke(main_app, ["doctor", "--config", str(cfg)])
+    assert res.exit_code == 1
+    assert "no API key" in res.output
+
+
+def test_doctor_warns_unexpanded_alert_env(tmp_path, monkeypatch):
+    monkeypatch.delenv("SOME_UNSET_HOOK", raising=False)
+    _patch_llm(monkeypatch, cloud=False, available=True)
+    cfg = _cfg(
+        tmp_path,
+        f"db_path: {tmp_path / 'l.db'}\npii_salt: abc\n"
+        "alerts:\n  - type: slack\n    url: ${SOME_UNSET_HOOK}\n",
+    )
+    res = runner.invoke(main_app, ["doctor", "--config", str(cfg)])
+    # channel builds fine (url is a non-empty string), but env var is unset
+    assert res.exit_code == 0, res.output
+    assert "unset env var" in res.output

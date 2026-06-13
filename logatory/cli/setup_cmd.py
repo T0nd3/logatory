@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 from pathlib import Path
 from typing import Annotated, Optional
 
 import typer
+
+from logatory.config import Config
 
 _SALT_TOKEN = "__PII_SALT__"
 
@@ -106,3 +109,130 @@ def init(
     typer.echo("  A unique PII salt was generated. Next steps:")
     typer.echo("    - review the file and set your LLM provider / alert channels")
     typer.echo("    - run 'logatory doctor' to check your environment")
+
+
+# ---------------------------------------------------------------------------
+# doctor
+# ---------------------------------------------------------------------------
+
+_OK = typer.style(" OK ", fg=typer.colors.GREEN)
+_WARN = typer.style("WARN", fg=typer.colors.YELLOW)
+_FAIL = typer.style("FAIL", fg=typer.colors.RED)
+
+
+class _Report:
+    """Accumulates check results; tracks whether any hard failure occurred."""
+
+    def __init__(self) -> None:
+        self.failed = False
+
+    def ok(self, label: str, msg: str) -> None:
+        typer.echo(f"  [{_OK}] {label}: {msg}")
+
+    def warn(self, label: str, msg: str) -> None:
+        typer.echo(f"  [{_WARN}] {label}: {msg}")
+
+    def fail(self, label: str, msg: str) -> None:
+        self.failed = True
+        typer.echo(f"  [{_FAIL}] {label}: {msg}")
+
+
+def doctor(
+    config: Annotated[Optional[Path], typer.Option("--config", "-c")] = None,
+) -> None:
+    """Diagnose configuration and environment; exit non-zero on hard failures."""
+    from logatory.llm.factory import _API_KEY_ENV, make_llm_client
+    from logatory.notify import build_notifiers
+    from logatory.plugins.loader import load_plugins
+
+    rep = _Report()
+    typer.echo("\nLogatory environment check\n" + "-" * 40)
+
+    # ── Config ─────────────────────────────────────────────────────────────
+    used_path = config or Config.find_config_path()
+    if used_path:
+        rep.ok("Config", f"using {used_path}")
+    else:
+        rep.warn("Config", "no config file found — using defaults (run 'logatory init')")
+    try:
+        cfg = Config.load(config)
+    except Exception as e:
+        rep.fail("Config", f"failed to load: {e}")
+        raise typer.Exit(1) from e
+
+    # ── PII salt ───────────────────────────────────────────────────────────
+    if cfg.pii_salt:
+        rep.ok("PII salt", "set")
+    else:
+        rep.warn(
+            "PII salt",
+            "empty — redaction hashes are not stable; run 'logatory init' or set LOGATORY_PII_SALT",
+        )
+
+    # ── Database path ──────────────────────────────────────────────────────
+    parent = cfg.db_path.parent if str(cfg.db_path.parent) else Path(".")
+    if not parent.exists():
+        rep.fail("Database", f"directory {parent} does not exist")
+    elif not os.access(parent, os.W_OK):
+        rep.fail("Database", f"directory {parent} is not writable")
+    else:
+        state = "exists" if cfg.db_path.exists() else "will be created"
+        rep.ok("Database", f"{cfg.db_path} ({state})")
+
+    # ── LLM provider ───────────────────────────────────────────────────────
+    provider = cfg.llm.provider
+    client = make_llm_client(cfg.llm)
+    if getattr(client, "is_cloud", False):
+        env_vars = _API_KEY_ENV.get(provider, [])
+        has_key = bool(cfg.llm.api_key) or any(os.environ.get(v) for v in env_vars)
+        if not has_key:
+            hint = " or ".join(env_vars) or "llm.api_key"
+            rep.fail("LLM", f"cloud provider '{provider}' has no API key (set {hint})")
+        else:
+            rep.ok("LLM", f"{provider}/{cfg.llm.model} (API key found)")
+    else:
+        rep.ok("LLM", f"{provider}/{cfg.llm.model} (local)")
+
+    try:
+        reachable = client.is_available()
+    except Exception:
+        reachable = False
+    if reachable:
+        rep.ok("LLM reachability", f"{provider} is reachable")
+    else:
+        rep.warn("LLM reachability", f"{provider} not reachable (it may simply be offline)")
+
+    # ── Plugins ────────────────────────────────────────────────────────────
+    if cfg.plugins_dir:
+        registry = load_plugins(cfg.plugins_dir)
+        rep.ok(
+            "Plugins",
+            f"{cfg.plugins_dir}: {len(registry.rules)} rule(s), "
+            f"{len(registry.pii_patterns)} PII, {len(registry.parsers)} parser(s), "
+            f"{len(registry.adapters)} adapter(s)",
+        )
+    else:
+        rep.ok("Plugins", "none configured")
+
+    # ── Alert channels ─────────────────────────────────────────────────────
+    try:
+        notifiers = build_notifiers(cfg.alerts)
+    except ValueError as e:
+        rep.fail("Alerts", f"invalid configuration: {e}")
+    else:
+        if not notifiers:
+            rep.ok("Alerts", "no channels configured")
+        else:
+            rep.ok("Alerts", f"{len(notifiers)} channel(s) configured")
+            unexpanded = [c.type for c in cfg.alerts if c.url and "${" in c.url]
+            if unexpanded:
+                rep.warn(
+                    "Alerts",
+                    f"unset env var(s) in channel url(s): {', '.join(unexpanded)}",
+                )
+
+    typer.echo("-" * 40)
+    if rep.failed:
+        typer.echo(typer.style("  One or more checks FAILED.", fg=typer.colors.RED))
+        raise typer.Exit(1)
+    typer.echo(typer.style("  All critical checks passed.", fg=typer.colors.GREEN))
