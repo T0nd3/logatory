@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Parsers:** Apache error log (classic 2.2 and 2.4 layouts, with log-level →
+  severity mapping) and HAProxy HTTP log (syslog-prefix aware), both
+  auto-detected. Apache *access* logs already parse via the combined-log parser.
 - **Alert channels:** a `notify` subsystem with Slack, Discord, generic-webhook
   and e-mail (SMTP) notifiers. Configure any number under an `alerts:` section in
   `config.yaml`, each with its own `min_severity`; they fire on every realtime

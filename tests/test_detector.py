@@ -26,6 +26,26 @@ def test_detects_nginx_combined():
     assert FormatDetector().detect(sample) == LogFormat.NGINX_COMBINED
 
 
+def test_detects_apache_error():
+    sample = _sample("apache_error.log")
+    assert FormatDetector().detect(sample) == LogFormat.APACHE_ERROR
+
+
+def test_detects_haproxy():
+    sample = _sample("haproxy.log")
+    assert FormatDetector().detect(sample) == LogFormat.HAPROXY
+
+
+def test_syslog_prefixed_haproxy_not_mistaken_for_syslog():
+    # A HAProxy line wrapped in a syslog prefix must win over the syslog rule.
+    sample = [
+        "Feb  6 12:14:14 lb01 haproxy[14389]: 10.0.1.2:33317 "
+        "[06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 "
+        '200 2750 - - ---- 1/1/1/1/0 0/0 "GET /index.html HTTP/1.1"'
+    ]
+    assert FormatDetector().detect(sample) == LogFormat.HAPROXY
+
+
 def test_detects_auth_log():
     sample = _sample("auth.log")
     assert FormatDetector().detect(sample) == LogFormat.AUTH_LOG

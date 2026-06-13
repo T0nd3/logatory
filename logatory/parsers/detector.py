@@ -13,6 +13,8 @@ from .plugins import plugin_parsers
 class LogFormat(str, Enum):
     JSON_LINES = "json_lines"
     NGINX_COMBINED = "nginx_combined"
+    APACHE_ERROR = "apache_error"
+    HAPROXY = "haproxy"
     SYSLOG = "syslog"
     AUTH_LOG = "auth_log"
     LOGFMT = "logfmt"
@@ -22,6 +24,8 @@ class LogFormat(str, Enum):
 
 
 _NGINX_RE = re.compile(r'^\S+ \S+ \S+ \[.+\] "[A-Z]+ .+ HTTP/\d\.\d" \d{3} \d+')
+_APACHE_ERROR_RE = re.compile(r"^\[[^\]]+\] \[(?:\w+:)?\w+\] ")
+_HAPROXY_RE = re.compile(r"\S+:\d+ \[\d{2}/\w{3}/\d{4}:[\d:]+\.\d+\] \S+ \S+/\S+ [\d/+-]+ \d{3} ")
 _SYSLOG_RE = re.compile(r"^\w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \S+ \S+(\[\d+\])?:")
 _AUTH_LOG_RE = re.compile(r"^\w{3}\s+\d{1,2} \d{2}:\d{2}:\d{2} \S+ (sshd|sudo|su|login|passwd)\b")
 
@@ -45,6 +49,16 @@ class FormatDetector:
         leef_hits = sum(1 for line in non_empty if looks_like_leef(line))
         if leef_hits / len(non_empty) >= 0.6:
             return LogFormat.LEEF
+
+        # HAProxy is usually wrapped in a syslog prefix, so it must be checked
+        # before the syslog/auth rules below; .search skips any such prefix.
+        haproxy_hits = sum(1 for line in non_empty if _HAPROXY_RE.search(line))
+        if haproxy_hits / len(non_empty) >= 0.6:
+            return LogFormat.HAPROXY
+
+        apache_error_hits = sum(1 for line in non_empty if _APACHE_ERROR_RE.match(line))
+        if apache_error_hits / len(non_empty) >= 0.6:
+            return LogFormat.APACHE_ERROR
 
         auth_hits = sum(1 for line in non_empty if _AUTH_LOG_RE.match(line))
         if auth_hits / len(non_empty) >= 0.6:

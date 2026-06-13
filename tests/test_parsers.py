@@ -1,4 +1,6 @@
 from logatory.models import Severity
+from logatory.parsers.apache import ApacheErrorParser
+from logatory.parsers.haproxy import HAProxyParser
 from logatory.parsers.json_lines import JsonLinesParser
 from logatory.parsers.logfmt import LogfmtParser
 from logatory.parsers.nginx import NginxCombinedParser
@@ -133,6 +135,111 @@ class TestNginxCombinedParser:
 
     def test_garbage_returns_none(self):
         assert self.parser.parse("not a log line at all") is None
+
+
+class TestApacheErrorParser:
+    def setup_method(self):
+        self.parser = ApacheErrorParser("apache")
+
+    def test_classic_error_line(self):
+        line = "[Wed Oct 11 14:32:52 2000] [error] [client 127.0.0.1] File does not exist: /favicon.ico"
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.severity == Severity.ERROR
+        assert event.parsed_fields["client"] == "127.0.0.1"
+        assert event.message == "File does not exist: /favicon.ico"
+        assert event.timestamp is not None
+
+    def test_modern_24_format_with_module_and_pid(self):
+        line = "[Wed Oct 11 14:32:54.123456 2000] [core:error] [pid 12345:tid 140] [client 1.2.3.4:5678] AH00128: boom"
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.severity == Severity.ERROR
+        assert event.parsed_fields["module"] == "core"
+        assert event.parsed_fields["pid"] == "12345"
+        assert event.parsed_fields["client"] == "1.2.3.4:5678"
+        assert event.message == "AH00128: boom"
+
+    def test_warn_level(self):
+        line = "[Wed Oct 11 14:32:53 2000] [warn] [client 10.0.0.5] handshake interrupted"
+        event = self.parser.parse(line)
+        assert event.severity == Severity.WARNING
+
+    def test_notice_without_client_is_info(self):
+        line = (
+            "[Wed Oct 11 14:32:55 2000] [notice] Apache configured -- resuming normal operations"
+        )
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.severity == Severity.INFO
+        assert event.parsed_fields["client"] == ""
+
+    def test_emerg_is_critical(self):
+        line = "[Wed Oct 11 14:32:55 2000] [emerg] child process exited"
+        event = self.parser.parse(line)
+        assert event.severity == Severity.CRITICAL
+
+    def test_empty_line_returns_none(self):
+        assert self.parser.parse("") is None
+
+    def test_garbage_returns_none(self):
+        assert self.parser.parse("not an apache error line") is None
+
+
+class TestHAProxyParser:
+    def setup_method(self):
+        self.parser = HAProxyParser("haproxy")
+
+    def test_syslog_prefixed_line(self):
+        line = (
+            "Feb  6 12:14:14 lb01 haproxy[14389]: 10.0.1.2:33317 "
+            "[06/Feb/2009:12:14:14.655] http-in static/srv1 10/0/30/69/109 "
+            '200 2750 - - ---- 1/1/1/1/0 0/0 "GET /index.html HTTP/1.1"'
+        )
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.severity == Severity.INFO
+        assert event.parsed_fields["client_ip"] == "10.0.1.2"
+        assert event.parsed_fields["frontend"] == "http-in"
+        assert event.parsed_fields["backend"] == "static"
+        assert event.parsed_fields["server"] == "srv1"
+        assert event.parsed_fields["status"] == 200
+        assert event.message == "GET /index.html HTTP/1.1 -> 200"
+        assert event.timestamp is not None
+
+    def test_bare_payload_without_prefix(self):
+        line = (
+            "10.0.1.8:44512 [06/Feb/2009:12:14:17.222] http-in static/srv1 "
+            '2/0/3/8/14 200 4096 - - ---- 1/1/0/0/0 0/0 "GET /style.css HTTP/1.1"'
+        )
+        event = self.parser.parse(line)
+        assert event is not None
+        assert event.parsed_fields["status"] == 200
+
+    def test_404_is_warning(self):
+        line = (
+            "Feb  6 12:14:15 lb01 haproxy[14389]: 203.0.113.7:51234 "
+            "[06/Feb/2009:12:14:15.123] http-in api/srv2 5/0/12/45/62 404 512 "
+            '- - ---- 2/2/1/1/0 0/0 "GET /missing HTTP/1.1"'
+        )
+        event = self.parser.parse(line)
+        assert event.severity == Severity.WARNING
+
+    def test_503_is_error_and_keeps_term_state(self):
+        line = (
+            "Feb  6 12:14:16 lb01 haproxy[14389]: 198.51.100.9:40000 "
+            "[06/Feb/2009:12:14:16.900] http-in api/srv3 8/0/20/-1/512 503 198 "
+            '- - sH-- 3/3/2/1/0 0/0 "POST /checkout HTTP/1.1"'
+        )
+        event = self.parser.parse(line)
+        assert event.severity == Severity.ERROR
+        assert event.parsed_fields["term_state"] == "sH--"
+
+    def test_empty_line_returns_none(self):
+        assert self.parser.parse("") is None
+
+    def test_garbage_returns_none(self):
+        assert self.parser.parse("May 18 09:55:01 host systemd[1]: started") is None
 
 
 class TestSyslogParser:

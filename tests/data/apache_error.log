@@ -1,0 +1,5 @@
+[Wed Oct 11 14:32:52 2000] [error] [client 127.0.0.1] File does not exist: /var/www/favicon.ico
+[Wed Oct 11 14:32:53 2000] [warn] [client 10.0.0.5] mod_ssl: handshake interrupted
+[Wed Oct 11 14:32:54.123456 2000] [core:error] [pid 12345:tid 140] [client 1.2.3.4:5678] AH00128: File does not exist: /srv/app
+[Wed Oct 11 14:32:55 2000] [notice] Apache/2.4.41 (Unix) configured -- resuming normal operations
+[Wed Oct 11 14:32:56.000999 2000] [ssl:warn] [pid 999] AH01906: server certificate is a CA certificate

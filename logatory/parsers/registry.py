@@ -1,6 +1,8 @@
+from .apache import ApacheErrorParser
 from .base import BaseParser
 from .cef_leef import CEFParser, LEEFParser
 from .detector import LogFormat
+from .haproxy import HAProxyParser
 from .json_lines import JsonLinesParser
 from .logfmt import LogfmtParser
 from .nginx import NginxCombinedParser
@@ -15,6 +17,10 @@ def get_parser(fmt: LogFormat | str, source: str) -> BaseParser:
             return JsonLinesParser(source)
         case LogFormat.NGINX_COMBINED:
             return NginxCombinedParser(source)
+        case LogFormat.APACHE_ERROR:
+            return ApacheErrorParser(source)
+        case LogFormat.HAPROXY:
+            return HAProxyParser(source)
         case LogFormat.SYSLOG:
             return SyslogParser(source)
         case LogFormat.AUTH_LOG:
