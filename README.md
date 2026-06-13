@@ -867,7 +867,8 @@ logatory agent triage --json
 The agent only ever **reads** your local data via bounded tools, so a run can
 never mutate state. Available tools: `get_summary`, `list_errors`, `get_error`,
 `get_occurrences` (stack traces), `error_trend`, `list_regressions`,
-`top_finding_rules`, `get_findings_by_rule` and `search_findings`.
+`top_finding_rules`, `get_findings_by_rule`, `search_findings`,
+`list_anomaly_sources` and `get_baseline` (anomaly baselines).
 
 > **Requires a tool-capable provider and model.** Works with `claude`, any
 > OpenAI-compatible endpoint (`provider: openai_compat`), and the native

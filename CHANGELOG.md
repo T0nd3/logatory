@@ -23,8 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via `/v1`); other providers exit cleanly with guidance.
 - **Agent tools:** beyond the per-error lookups, the agent can now call
   `get_summary` (dataset overview), `error_trend` (daily volume), `list_regressions`
-  (errors that came back), `top_finding_rules` (most frequent/severe detections)
-  and `get_findings_by_rule` (drill-down) — all read-only and size-bounded.
+  (errors that came back), `top_finding_rules` (most frequent/severe detections),
+  `get_findings_by_rule` (drill-down), and `list_anomaly_sources` / `get_baseline`
+  (statistical anomaly baselines) — all read-only and size-bounded.
 - **Native Ollama tool calling:** the `ollama` provider now implements
   `chat_with_tools` via its `/api/chat` endpoint, so the agent runs fully local
   without the OpenAI-compatible `/v1` detour. Requires a tool-capable model

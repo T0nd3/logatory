@@ -589,6 +589,53 @@ def test_error_trend_counts_recent_occurrences(tmp_path):
     assert any(r["count"] >= 1 for r in rows)
 
 
+def _seed_baseline(db: Path, source: str = "api") -> None:
+    from logatory.anomaly.baseline import compute_stats
+    from logatory.storage.baseline_repo import BaselineRepository
+
+    now = datetime.now(UTC)
+    # Six buckets with slight variation so std > 0 and the baseline is "trained".
+    fds = [{"error_rate": float(i % 3), "volume": 10.0 + i} for i in range(6)]
+    timestamps = [now - timedelta(minutes=i) for i in range(6)]
+    with BaselineRepository(db) as repo:
+        repo.add_observations(source, fds, timestamps)
+        stats = compute_stats(repo.get_all_feature_dicts(source), source)
+        repo.update_stats(stats)
+
+
+def test_list_anomaly_sources_tool(tmp_path):
+    import json
+
+    db = tmp_path / "anom.db"
+    _seed_baseline(db, "api")
+    tools = build_investigation_tools(db)
+    rows = json.loads(_call(tools, "list_anomaly_sources"))
+    assert any(r["source_key"] == "api" for r in rows)
+
+
+def test_get_baseline_tool(tmp_path):
+    import json
+
+    db = tmp_path / "anom.db"
+    _seed_baseline(db, "api")
+    tools = build_investigation_tools(db)
+    data = json.loads(_call(tools, "get_baseline", source="api"))
+    assert data["source_key"] == "api"
+    assert data["trained"] is True
+    assert "error_rate" in data["features"]
+    assert "mean" in data["features"]["error_rate"]
+
+
+def test_get_baseline_missing(tmp_path):
+    import json
+
+    db = tmp_path / "anom.db"
+    _seed_baseline(db, "api")
+    tools = build_investigation_tools(db)
+    data = json.loads(_call(tools, "get_baseline", source="ghost"))
+    assert "error" in data
+
+
 def test_list_regressions_detects_reappearance(tmp_path):
     import json
 

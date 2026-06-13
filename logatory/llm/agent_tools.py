@@ -12,6 +12,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from ..storage.baseline_repo import BaselineRepository
 from ..storage.errors_repo import ErrorsRepository
 from ..storage.findings_repo import FindingsRepository
 from .agent import Tool
@@ -161,6 +162,28 @@ def build_investigation_tools(db_path: Path) -> list[Tool]:
                 d["raw_event"] = d["raw_event"][:_MAX_SAMPLE_CHARS]
             out.append(d)
         return _dumps(out)
+
+    def list_anomaly_sources() -> str:
+        with BaselineRepository(db_path) as repo:
+            rows = repo.list_sources()
+        return _dumps(rows[:_MAX_LIMIT])
+
+    def get_baseline(source: str) -> str:
+        with BaselineRepository(db_path) as repo:
+            stats = repo.get_stats(source)
+        if stats is None:
+            return _dumps({"error": f"No trained baseline for source '{source}'."})
+        return _dumps(
+            {
+                "source_key": stats.source_key,
+                "n_buckets": stats.n_buckets,
+                "trained": stats.is_trained(),
+                "features": {
+                    name: {"mean": round(fs.mean, 4), "std": round(fs.std, 4), "n": fs.n}
+                    for name, fs in stats.features.items()
+                },
+            }
+        )
 
     return [
         Tool(
@@ -319,5 +342,30 @@ def build_investigation_tools(db_path: Path) -> list[Tool]:
                 },
             ),
             handler=get_findings_by_rule,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="list_anomaly_sources",
+                description="List sources that have a statistical anomaly-detection "
+                "baseline, with bucket counts and last-updated time.",
+                input_schema={"type": "object", "properties": {}, "required": []},
+            ),
+            handler=list_anomaly_sources,
+        ),
+        Tool(
+            spec=ToolSpec(
+                name="get_baseline",
+                description="Fetch the trained baseline for one source: per-feature mean "
+                "and standard deviation, used to judge whether current activity is "
+                "anomalous. Use list_anomaly_sources first to find source keys.",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "source": {"type": "string", "description": "The baseline source key."}
+                    },
+                    "required": ["source"],
+                },
+            ),
+            handler=get_baseline,
         ),
     ]
